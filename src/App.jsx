@@ -19,11 +19,15 @@ const buildProxyUrls = (url) => [
   `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
 ];
 
-const parseDreamloResponse = async (response, proxyUrl) => {
+const parseDreamloResponse = async (response, proxyUrl, expectJson = true) => {
   const body = await response.text();
 
   if (!response.ok) {
     throw new Error(`Proxy request failed (${response.status}) via ${proxyUrl}`);
+  }
+
+  if (!expectJson) {
+    return body;
   }
 
   try {
@@ -37,14 +41,14 @@ const parseDreamloResponse = async (response, proxyUrl) => {
   }
 };
 
-const fetchDreamloJson = async (path) => {
+const requestDreamlo = async (path, { expectJson = true } = {}) => {
   const targetUrl = `${buildDreamloUrl(path)}${path.includes('?') ? '&' : '?'}_=${Date.now()}`;
   let lastError = null;
 
   for (const proxyUrl of buildProxyUrls(targetUrl)) {
     try {
       const response = await fetch(proxyUrl, { cache: 'no-store' });
-      return await parseDreamloResponse(response, proxyUrl);
+      return await parseDreamloResponse(response, proxyUrl, expectJson);
     } catch (error) {
       lastError = error;
       console.warn(`Dreamlo proxy failed: ${proxyUrl}`, error);
@@ -175,7 +179,7 @@ export default function App() {
 
   const fetchLeaderboard = async () => {
     try {
-      const data = await fetchDreamloJson(`${DREAMLO_PUBLIC}/json`);
+      const data = await requestDreamlo(`${DREAMLO_PUBLIC}/json`);
       setLeaderboard(normalizeLeaderboardEntries(data));
     } catch (e) { console.error("Leaderboard fetch failed", e); }
   };
@@ -185,10 +189,13 @@ export default function App() {
     setIsSubmitting(true);
     localStorage.setItem('orbital_smash_name', playerName);
     try {
-      await fetchDreamloJson(`${DREAMLO_PRIVATE}/add/${encodeURIComponent(playerName.trim())}/${score}`);
-      await new Promise(r => setTimeout(r, 1000));
-      await fetchLeaderboard();
+      await requestDreamlo(
+        `${DREAMLO_PRIVATE}/add/${encodeURIComponent(playerName.trim())}/${score}`,
+        { expectJson: false }
+      );
       setGameState('menu');
+      await new Promise(r => setTimeout(r, 600));
+      await fetchLeaderboard();
     } catch (e) { console.error("Score submission failed", e); }
     setIsSubmitting(false);
   };
