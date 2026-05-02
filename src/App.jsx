@@ -9,6 +9,9 @@ const MACE_RADIUS = 20;
 const MAX_MACE_SPEED = 40;
 const BASE_ENEMY_SPAWN_RATE = 100; // Frames between spawns (Increased from 60 for easier start)
 
+const DREAMLO_PUBLIC = "69f664cb8f40bb1068bd441a";
+const DREAMLO_PRIVATE = "qJcEBUUmAE6ApG2ZQjVRiw4nBSAtJFnUGNixUKRstFdA";
+
 // --- AUDIO SYSTEM (Synthesized Retro SFX) ---
 class AudioSys {
   constructor() {
@@ -103,10 +106,45 @@ export default function App() {
   const [score, setScore] = useState(0);
   const [health, setHealth] = useState(3);
   const [energy, setEnergy] = useState(0);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [playerName, setPlayerName] = useState(() => localStorage.getItem('orbital_smash_name') || "");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const canvasRef = useRef(null);
   const reqRef = useRef(null);
   const stateRef = useRef(null);
+
+  const fetchLeaderboard = async () => {
+    try {
+      const res = await fetch(`https://www.dreamlo.com/lb/${DREAMLO_PUBLIC}/json`);
+      const data = await res.json();
+      if (data.dreamlo && data.dreamlo.leaderboard) {
+        let entries = data.dreamlo.leaderboard.entry;
+        if (entries) {
+            if (!Array.isArray(entries)) entries = [entries];
+            setLeaderboard(entries.slice(0, 10));
+        }
+      }
+    } catch (e) { console.error("Leaderboard fetch failed", e); }
+  };
+
+  const submitScore = async () => {
+    if (!playerName.trim() || isSubmitting) return;
+    setIsSubmitting(true);
+    localStorage.setItem('orbital_smash_name', playerName);
+    try {
+      await fetch(`https://www.dreamlo.com/lb/${DREAMLO_PRIVATE}/add/${encodeURIComponent(playerName)}/${score}`);
+      await fetchLeaderboard();
+      setGameState('menu');
+    } catch (e) { console.error("Score submission failed", e); }
+    setIsSubmitting(false);
+  };
+
+  useEffect(() => {
+    if (gameState === 'menu') {
+        fetchLeaderboard();
+    }
+  }, [gameState]);
 
   // Initialize or reset game engine state
   const initEngine = () => {
@@ -775,54 +813,99 @@ export default function App() {
 
       {/* --- MENU UI --- */}
       {gameState === 'menu' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/80 backdrop-blur-sm z-20">
-          <div className="relative group">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/80 backdrop-blur-sm z-20 p-4 overflow-y-auto">
+          <div className="relative group mb-8">
             <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-purple-600 rounded-lg blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-pulse"></div>
-            <h1 className="relative text-7xl font-black italic tracking-tighter text-white drop-shadow-2xl px-8 py-4 bg-gray-900 rounded-lg">
+            <h1 className="relative text-5xl md:text-7xl font-black italic tracking-tighter text-white drop-shadow-2xl px-8 py-4 bg-gray-900 rounded-lg text-center">
               ORBITAL SMASH
             </h1>
           </div>
           
-          <div className="mt-12 text-center max-w-lg space-y-6 text-gray-300 bg-gray-900/50 p-8 rounded-2xl border border-gray-800">
-            <p className="text-lg leading-relaxed">
-              You are the weapon. Swing your mouse to build momentum and obliterate the swarm.
-            </p>
-            
-            <div className="grid grid-cols-2 gap-4 text-sm text-left bg-gray-950/50 p-4 rounded-xl">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gray-800 rounded"><Trophy size={16} className="text-cyan-400"/></div>
-                <span>Fast Swings = More Damage</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gray-800 rounded"><Zap size={16} className="text-yellow-400"/></div>
-                <span>Collect Orbs for Energy</span>
-              </div>
-              <div className="col-span-2 flex items-center gap-3 justify-center mt-2 border-t border-gray-800 pt-4">
-                <div className="px-3 py-1 bg-gray-800 rounded border border-gray-600 font-bold">CLICK</div>
-                <span className="text-white font-bold tracking-widest">Trigger Overdrive (at 100%)</span>
-              </div>
+          <div className="flex flex-col md:flex-row gap-8 w-full max-w-5xl items-stretch">
+            {/* Left Column: Instructions */}
+            <div className="flex-1 space-y-6 text-gray-300 bg-gray-900/50 p-6 rounded-2xl border border-gray-800">
+                <p className="text-lg leading-relaxed text-center">
+                You are the weapon. Swing your mouse to build momentum and obliterate the swarm.
+                </p>
+                
+                <div className="grid grid-cols-1 gap-4 text-sm bg-gray-950/50 p-4 rounded-xl">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gray-800 rounded text-cyan-400"><Trophy size={16}/></div>
+                    <span>Fast Swings = More Damage</span>
+                </div>
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gray-800 rounded text-yellow-400"><Zap size={16}/></div>
+                    <span>Collect Orbs for Energy</span>
+                </div>
+                <div className="flex items-center gap-3 pt-4 border-t border-gray-800">
+                    <div className="px-3 py-1 bg-gray-800 rounded border border-gray-600 font-bold">CLICK</div>
+                    <span className="text-white font-bold tracking-widest text-xs">Activate Overdrive (100% Energy)</span>
+                </div>
+                </div>
+
+                <button 
+                onClick={startGame}
+                className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-cyan-600 text-xl rounded-xl hover:bg-cyan-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-600 w-full"
+                >
+                <Play className="mr-2" size={24} fill="currentColor" />
+                INITIATE NEON CORE
+                </button>
             </div>
 
-            <button 
-              onClick={startGame}
-              className="mt-8 group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-cyan-600 text-xl rounded-xl hover:bg-cyan-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-600 w-full"
-            >
-              <Play className="mr-2" size={24} fill="currentColor" />
-              INITIATE NEON CORE
-            </button>
-            <p className="text-xs text-gray-500 mt-4 uppercase tracking-widest">Audio Required for Maximum Impact</p>
+            {/* Right Column: Leaderboard */}
+            <div className="w-full md:w-80 bg-gray-900/50 p-6 rounded-2xl border border-gray-800 flex flex-col">
+                <div className="flex items-center gap-2 mb-4 text-cyan-400 border-b border-gray-800 pb-2">
+                    <Trophy size={20}/>
+                    <h2 className="text-xl font-bold tracking-widest">HALL OF FAME</h2>
+                </div>
+                <div className="flex-1 space-y-2 overflow-y-auto max-h-64 pr-2">
+                    {leaderboard.length > 0 ? leaderboard.map((entry, i) => (
+                        <div key={i} className="flex justify-between items-center text-sm bg-gray-950/50 p-2 rounded border border-gray-800/50">
+                            <span className="text-gray-500 w-6">{i + 1}.</span>
+                            <span className="flex-1 text-white font-bold truncate px-2">{entry.name}</span>
+                            <span className="text-cyan-400 font-mono">{Number(entry.score).toLocaleString()}</span>
+                        </div>
+                    )) : (
+                        <div className="text-center text-gray-600 py-8 italic text-sm">
+                            Scanning satellites...
+                        </div>
+                    )}
+                </div>
+            </div>
           </div>
+          
+          <p className="text-xs text-gray-500 mt-8 uppercase tracking-widest">Audio Required for Maximum Impact</p>
         </div>
       )}
 
       {/* --- GAME OVER UI --- */}
       {gameState === 'gameover' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/90 backdrop-blur-md z-20 animate-in fade-in duration-500">
-          <h2 className="text-6xl font-black text-red-500 tracking-widest drop-shadow-[0_0_20px_rgba(239,68,68,0.8)] mb-2">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/90 backdrop-blur-md z-20 animate-in fade-in duration-500 p-4">
+          <h2 className="text-5xl md:text-6xl font-black text-red-500 tracking-widest drop-shadow-[0_0_20px_rgba(239,68,68,0.8)] mb-2 text-center">
             CORE DESTROYED
           </h2>
-          <div className="text-3xl text-white mb-12 font-bold tracking-widest">
+          <div className="text-2xl md:text-3xl text-white mb-8 font-bold tracking-widest">
             FINAL SCORE: <span className="text-cyan-400">{score.toLocaleString()}</span>
+          </div>
+
+          <div className="w-full max-w-sm bg-gray-900/80 p-6 rounded-2xl border border-red-900/50 shadow-2xl mb-8">
+            <label className="block text-xs text-gray-400 uppercase tracking-widest mb-2 font-bold">Transmit Identity</label>
+            <div className="flex gap-2">
+                <input 
+                    type="text" 
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value.toUpperCase().slice(0, 12))}
+                    placeholder="PLAYER NAME"
+                    className="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-4 py-3 text-cyan-400 focus:outline-none focus:border-cyan-500 font-bold placeholder:text-gray-800"
+                />
+                <button 
+                    onClick={submitScore}
+                    disabled={!playerName.trim() || isSubmitting}
+                    className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-800 px-4 rounded-lg transition-colors"
+                >
+                    {isSubmitting ? "..." : <Zap size={20} fill="currentColor"/>}
+                </button>
+            </div>
           </div>
           
           <button 
