@@ -288,9 +288,6 @@ export default function App() {
       wave: 1,
       frames: 0,
       spawnRate: BASE_ENEMY_SPAWN_RATE,
-      spawnTimer: 0,
-      waveTimer: 0,
-      hudTimer: 0,
       shake: 0,
       hitStop: 0,
       invulnTimer: 0,
@@ -419,15 +416,12 @@ export default function App() {
     };
 
     // Main Update Function
-    const update = (deltaFrames) => {
-      s.frames += deltaFrames;
-      s.spawnTimer += deltaFrames;
-      s.waveTimer += deltaFrames;
-      s.hudTimer += deltaFrames;
+    const update = () => {
+      s.frames++;
 
       // Hit-stop effect (pauses physics for dramatic impact)
       if (s.hitStop > 0) {
-        s.hitStop = Math.max(0, s.hitStop - deltaFrames);
+        s.hitStop--;
         return; 
       }
 
@@ -441,12 +435,12 @@ export default function App() {
         setEnergy(0);
       }
 
-      if (s.giantMaceTimer > 0) s.giantMaceTimer = Math.max(0, s.giantMaceTimer - deltaFrames);
+      if (s.giantMaceTimer > 0) s.giantMaceTimer--;
 
       const activeMaceRadius = s.isOverdrive ? MACE_RADIUS * 2.5 : (s.giantMaceTimer > 0 ? MACE_RADIUS * 2.0 : MACE_RADIUS);
       
       if (s.isOverdrive) {
-        s.overdriveTimer -= deltaFrames;
+        s.overdriveTimer--;
         s.shake = Math.max(s.shake, 2); // constant hum shake
         if (s.overdriveTimer <= 0) {
           s.isOverdrive = false;
@@ -457,21 +451,20 @@ export default function App() {
       // Node 0 (Core) smoothly follows mouse
       s.nodes[0].oldX = s.nodes[0].x;
       s.nodes[0].oldY = s.nodes[0].y;
-      const followAlpha = 1 - Math.pow(1 - perf.coreFollow, deltaFrames);
-      s.nodes[0].x += (s.mouse.x - s.nodes[0].x) * followAlpha;
-      s.nodes[0].y += (s.mouse.y - s.nodes[0].y) * followAlpha;
+      s.nodes[0].x += (s.mouse.x - s.nodes[0].x) * perf.coreFollow;
+      s.nodes[0].y += (s.mouse.y - s.nodes[0].y) * perf.coreFollow;
 
       // Verlet integration for the rest of the chain
       for (let i = 1; i < NUM_NODES; i++) {
         let n = s.nodes[i];
-        let vx = (n.x - n.oldX) * Math.pow(perf.friction, deltaFrames); // Friction
-        let vy = (n.y - n.oldY) * Math.pow(perf.friction, deltaFrames);
+        let vx = (n.x - n.oldX) * perf.friction; // Friction
+        let vy = (n.y - n.oldY) * perf.friction;
         
         n.oldX = n.x;
         n.oldY = n.y;
         
-        n.x += vx * deltaFrames;
-        n.y += vy * deltaFrames;
+        n.x += vx;
+        n.y += vy;
       }
 
       // Solve Constraints (Stiffen the chain)
@@ -511,26 +504,24 @@ export default function App() {
       if (s.maceHistory.length > (s.isOverdrive ? perf.overdriveTrailLength : perf.trailLength)) s.maceHistory.shift();
 
       // --- Spawning ---
-      while (s.spawnTimer >= Math.max(10, Math.floor(s.spawnRate))) {
+      if (s.frames % Math.max(10, Math.floor(s.spawnRate)) === 0) {
         spawnEnemy();
-        s.spawnTimer -= Math.max(10, Math.floor(s.spawnRate));
       }
 
       // Wave progression - Slowed down ramp up (1200 frames instead of 600)
-      while (s.waveTimer >= 1200) {
+      if (s.frames % 1200 === 0) {
         s.wave++;
         s.spawnRate = Math.max(20, s.spawnRate - 3); // More gentle scaling
-        s.waveTimer -= 1200;
       }
 
       // Combo Decay
       if (s.comboTimer > 0) {
-        s.comboTimer = Math.max(0, s.comboTimer - deltaFrames);
+        s.comboTimer--;
         if (s.comboTimer <= 0) s.combo = 0;
       }
 
       // Player Invulnerability
-      if (s.invulnTimer > 0) s.invulnTimer = Math.max(0, s.invulnTimer - deltaFrames);
+      if (s.invulnTimer > 0) s.invulnTimer--;
 
       // --- Entities Update & Collisions ---
       const core = s.nodes[0];
@@ -545,8 +536,8 @@ export default function App() {
         let dist = Math.hypot(dx, dy);
         
         if (dist < 150 || s.isOverdrive) {
-          p.x += (dx / dist) * 8 * deltaFrames;
-          p.y += (dy / dist) * 8 * deltaFrames;
+          p.x += (dx / dist) * 8;
+          p.y += (dy / dist) * 8;
         }
 
         // Collection
@@ -576,15 +567,15 @@ export default function App() {
       // Update Enemies
       for (let i = s.enemies.length - 1; i >= 0; i--) {
         let e = s.enemies[i];
-        if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - deltaFrames);
+        if (e.hitFlash > 0) e.hitFlash--;
 
         // AI: Move towards core
         let angleToCore = Math.atan2(core.y - e.y, core.x - e.x);
         e.vx = Math.cos(angleToCore) * e.speed;
         e.vy = Math.sin(angleToCore) * e.speed;
 
-        e.x += e.vx * deltaFrames;
-        e.y += e.vy * deltaFrames;
+        e.x += e.vx;
+        e.y += e.vy;
 
         // Collision: Mace vs Enemy
         let mdx = mace.x - e.x;
@@ -686,27 +677,24 @@ export default function App() {
       // Update Particles
       for (let i = s.particles.length - 1; i >= 0; i--) {
         let p = s.particles[i];
-        p.x += p.vx * deltaFrames;
-        p.y += p.vy * deltaFrames;
-        p.vx *= Math.pow(0.95, deltaFrames);
-        p.vy *= Math.pow(0.95, deltaFrames);
-        p.life -= p.decay * deltaFrames;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.95;
+        p.vy *= 0.95;
+        p.life -= p.decay;
         if (p.life <= 0) s.particles.splice(i, 1);
       }
 
       // Update Texts
       for (let i = s.texts.length - 1; i >= 0; i--) {
         let t = s.texts[i];
-        t.y += t.vy * deltaFrames;
-        t.life -= 0.02 * deltaFrames;
+        t.y += t.vy;
+        t.life -= 0.02;
         if (t.life <= 0) s.texts.splice(i, 1);
       }
       
       // Sync score to React state periodically to avoid lag
-      if (s.hudTimer >= perf.hudSyncInterval) {
-        setScore(s.score);
-        s.hudTimer = 0;
-      }
+      if (s.frames % perf.hudSyncInterval === 0) setScore(s.score);
     };
 
     // Main Draw Function
@@ -905,11 +893,24 @@ export default function App() {
 
     // The Animation Loop
     let lastTime = window.performance.now();
+    let accumulator = 0;
     const loop = (time) => {
       const deltaMs = Math.min(50, time - lastTime || FRAME_DURATION);
       lastTime = time;
-      const deltaFrames = Math.max(0.75, deltaMs / FRAME_DURATION);
-      update(deltaFrames);
+      accumulator += deltaMs;
+      const maxSteps = perf.isMobile ? 2 : 3;
+      let steps = 0;
+
+      while (accumulator >= FRAME_DURATION && steps < maxSteps) {
+        update();
+        accumulator -= FRAME_DURATION;
+        steps++;
+      }
+
+      if (steps === maxSteps && accumulator > FRAME_DURATION * 2) {
+        accumulator = FRAME_DURATION;
+      }
+
       draw();
       reqRef.current = requestAnimationFrame(loop);
     };
