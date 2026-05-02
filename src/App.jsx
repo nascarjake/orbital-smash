@@ -8,6 +8,7 @@ const CORE_RADIUS = 12;
 const MACE_RADIUS = 20;
 const MAX_MACE_SPEED = 40;
 const BASE_ENEMY_SPAWN_RATE = 100; // Frames between spawns (Increased from 60 for easier start)
+const MOBILE_BREAKPOINT = 768;
 
 const DREAMLO_PUBLIC = "69f664cb8f40bb1068bd441a";
 const DREAMLO_PRIVATE = "qJcEBUUmAE6ApG2ZQjVRiw4nBSAtJFnUGNixUKRstFdA";
@@ -210,6 +211,52 @@ export default function App() {
   const initEngine = () => {
     const width = window.innerWidth;
     const height = window.innerHeight;
+    const isMobile = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < MOBILE_BREAKPOINT;
+    const performance = isMobile
+      ? {
+          isMobile: true,
+          coreFollow: 0.22,
+          friction: 0.92,
+          constraintIterations: 3,
+          trailLength: 8,
+          overdriveTrailLength: 14,
+          particleMultiplier: 0.55,
+          particleCap: 90,
+          textCap: 12,
+          pickupGlow: 6,
+          enemyGlow: 6,
+          ropeGlow: 6,
+          maceGlowBase: 10,
+          overdriveMaceGlow: 26,
+          shakeDecay: 0.82,
+          hitStopMultiplier: 0.5,
+          drawGrid: false,
+          motionBlurAlpha: 0.2,
+          gridAlpha: 0.12,
+          hudSyncInterval: 12,
+        }
+      : {
+          isMobile: false,
+          coreFollow: 0.15,
+          friction: 0.95,
+          constraintIterations: 4,
+          trailLength: 12,
+          overdriveTrailLength: 20,
+          particleMultiplier: 1,
+          particleCap: 220,
+          textCap: 24,
+          pickupGlow: 10,
+          enemyGlow: 10,
+          ropeGlow: 10,
+          maceGlowBase: 15,
+          overdriveMaceGlow: 40,
+          shakeDecay: 0.9,
+          hitStopMultiplier: 1,
+          drawGrid: true,
+          motionBlurAlpha: 0.3,
+          gridAlpha: 0.2,
+          hudSyncInterval: 10,
+        };
     
     // Physics nodes for the chain-mace (Verlet integration)
     const nodes = Array.from({ length: NUM_NODES }, (_, i) => ({
@@ -223,6 +270,8 @@ export default function App() {
       width, height,
       mouse: { x: width / 2, y: height / 2 },
       isMouseDown: false,
+      activePointerId: null,
+      performance,
       nodes,
       maceHistory: [],
       enemies: [],
@@ -264,6 +313,7 @@ export default function App() {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d', { alpha: false });
     let s = stateRef.current;
+    const performance = s.performance;
 
     // Handle Window Resize
     const handleResize = () => {
@@ -276,16 +326,38 @@ export default function App() {
     handleResize();
 
     // Handle Input Tracking
-    const handleMouseMove = (e) => {
+    const handlePointerMove = (e) => {
+      if (s.activePointerId !== null && e.pointerId !== s.activePointerId && e.pointerType !== 'mouse') {
+        return;
+      }
       s.mouse.x = e.clientX;
       s.mouse.y = e.clientY;
     };
-    const handleMouseDown = () => { s.isMouseDown = true; };
-    const handleMouseUp = () => { s.isMouseDown = false; };
+    const handlePointerDown = (e) => {
+      s.activePointerId = e.pointerId;
+      s.isMouseDown = true;
+      s.mouse.x = e.clientX;
+      s.mouse.y = e.clientY;
+      if (e.pointerType !== 'mouse') {
+        e.preventDefault();
+        canvas.setPointerCapture?.(e.pointerId);
+      }
+    };
+    const handlePointerUp = (e) => {
+      if (s.activePointerId !== null && e.pointerId !== s.activePointerId && e.pointerType !== 'mouse') {
+        return;
+      }
+      s.isMouseDown = false;
+      s.activePointerId = null;
+      if (e.pointerType !== 'mouse') {
+        e.preventDefault();
+      }
+    };
     
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('pointermove', handlePointerMove, { passive: false });
+    canvas.addEventListener('pointerdown', handlePointerDown, { passive: false });
+    window.addEventListener('pointerup', handlePointerUp, { passive: false });
+    window.addEventListener('pointercancel', handlePointerUp, { passive: false });
 
     // Helper functions inside the loop
     const spawnEnemy = () => {
@@ -316,7 +388,8 @@ export default function App() {
     };
 
     const spawnParticles = (x, y, color, count, speedFactor = 1) => {
-      for (let i = 0; i < count; i++) {
+      const particleCount = Math.max(1, Math.floor(count * performance.particleMultiplier));
+      for (let i = 0; i < particleCount; i++) {
         const angle = Math.random() * Math.PI * 2;
         const speed = Math.random() * 5 * speedFactor;
         s.particles.push({
@@ -329,10 +402,16 @@ export default function App() {
           size: 2 + Math.random() * 4
         });
       }
+      if (s.particles.length > performance.particleCap) {
+        s.particles.splice(0, s.particles.length - performance.particleCap);
+      }
     };
 
     const spawnFloatingText = (text, x, y, color) => {
       s.texts.push({ text, x, y, life: 1.0, color, vy: -1 - Math.random() });
+      if (s.texts.length > performance.textCap) {
+        s.texts.splice(0, s.texts.length - performance.textCap);
+      }
     };
 
     // Main Update Function
@@ -371,14 +450,14 @@ export default function App() {
       // Node 0 (Core) smoothly follows mouse
       s.nodes[0].oldX = s.nodes[0].x;
       s.nodes[0].oldY = s.nodes[0].y;
-      s.nodes[0].x += (s.mouse.x - s.nodes[0].x) * 0.15;
-      s.nodes[0].y += (s.mouse.y - s.nodes[0].y) * 0.15;
+      s.nodes[0].x += (s.mouse.x - s.nodes[0].x) * performance.coreFollow;
+      s.nodes[0].y += (s.mouse.y - s.nodes[0].y) * performance.coreFollow;
 
       // Verlet integration for the rest of the chain
       for (let i = 1; i < NUM_NODES; i++) {
         let n = s.nodes[i];
-        let vx = (n.x - n.oldX) * 0.95; // Friction
-        let vy = (n.y - n.oldY) * 0.95;
+        let vx = (n.x - n.oldX) * performance.friction; // Friction
+        let vy = (n.y - n.oldY) * performance.friction;
         
         n.oldX = n.x;
         n.oldY = n.y;
@@ -388,7 +467,7 @@ export default function App() {
       }
 
       // Solve Constraints (Stiffen the chain)
-      for (let iter = 0; iter < 4; iter++) {
+      for (let iter = 0; iter < performance.constraintIterations; iter++) {
         for (let i = 0; i < NUM_NODES - 1; i++) {
           let n1 = s.nodes[i];
           let n2 = s.nodes[i+1];
@@ -421,7 +500,7 @@ export default function App() {
       
       // Update Mace Trail
       s.maceHistory.push({ x: mace.x, y: mace.y });
-      if (s.maceHistory.length > (s.isOverdrive ? 20 : 12)) s.maceHistory.shift();
+      if (s.maceHistory.length > (s.isOverdrive ? performance.overdriveTrailLength : performance.trailLength)) s.maceHistory.shift();
 
       // --- Spawning ---
       if (s.frames % Math.max(10, Math.floor(s.spawnRate)) === 0) {
@@ -539,7 +618,7 @@ export default function App() {
               // Juice
               if (maceSpeed > 25 || s.isOverdrive) {
                 s.shake += 8;
-                s.hitStop = 2; // Pause for impact
+                s.hitStop = Math.max(1, Math.round(2 * performance.hitStopMultiplier)); // Pause for impact
                 audio.smash();
               } else {
                 s.shake += 2;
@@ -614,14 +693,14 @@ export default function App() {
       }
       
       // Sync score to React state periodically to avoid lag
-      if (s.frames % 10 === 0) setScore(s.score);
+      if (s.frames % performance.hudSyncInterval === 0) setScore(s.score);
     };
 
     // Main Draw Function
     const draw = () => {
       // Motion blur effect by drawing semi-transparent dark background
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = s.isOverdrive ? 'rgba(5, 0, 15, 0.2)' : 'rgba(10, 10, 12, 0.3)';
+      ctx.fillStyle = s.isOverdrive ? 'rgba(5, 0, 15, 0.2)' : `rgba(10, 10, 12, ${performance.motionBlurAlpha})`;
       ctx.fillRect(0, 0, s.width, s.height);
 
       // Screen Shake
@@ -630,22 +709,24 @@ export default function App() {
         const dx = (Math.random() - 0.5) * s.shake;
         const dy = (Math.random() - 0.5) * s.shake;
         ctx.translate(dx, dy);
-        s.shake *= 0.9; // decay shake
+        s.shake *= performance.shakeDecay; // decay shake
         if (s.shake < 0.5) s.shake = 0;
       }
 
       ctx.globalCompositeOperation = 'lighter';
 
       // Draw Grid (Subtle background motion)
-      ctx.strokeStyle = 'rgba(30, 40, 60, 0.2)';
-      ctx.lineWidth = 1;
-      const gridSize = 50;
-      const offsetX = (s.nodes[0].x * 0.1) % gridSize;
-      const offsetY = (s.nodes[0].y * 0.1) % gridSize;
-      ctx.beginPath();
-      for(let x = -offsetX; x < s.width; x += gridSize) { ctx.moveTo(x, 0); ctx.lineTo(x, s.height); }
-      for(let y = -offsetY; y < s.height; y += gridSize) { ctx.moveTo(0, y); ctx.lineTo(s.width, y); }
-      ctx.stroke();
+      if (performance.drawGrid) {
+        ctx.strokeStyle = `rgba(30, 40, 60, ${performance.gridAlpha})`;
+        ctx.lineWidth = 1;
+        const gridSize = 50;
+        const offsetX = (s.nodes[0].x * 0.1) % gridSize;
+        const offsetY = (s.nodes[0].y * 0.1) % gridSize;
+        ctx.beginPath();
+        for(let x = -offsetX; x < s.width; x += gridSize) { ctx.moveTo(x, 0); ctx.lineTo(x, s.height); }
+        for(let y = -offsetY; y < s.height; y += gridSize) { ctx.moveTo(0, y); ctx.lineTo(s.width, y); }
+        ctx.stroke();
+      }
 
       // Draw Pickups (Energy & Powerups)
       s.pickups.forEach(p => {
@@ -660,7 +741,7 @@ export default function App() {
           ctx.shadowColor = '#0ff';
         }
         
-        ctx.shadowBlur = 10;
+        ctx.shadowBlur = performance.pickupGlow;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.type === 'energy' || !p.type ? 4 : 7, 0, Math.PI * 2);
         ctx.fill();
@@ -676,7 +757,7 @@ export default function App() {
 
       // Draw Enemies
       s.enemies.forEach(e => {
-        ctx.shadowBlur = e.hitFlash > 0 ? 20 : 10;
+        ctx.shadowBlur = e.hitFlash > 0 ? performance.enemyGlow * 2 : performance.enemyGlow;
         ctx.shadowColor = e.hitFlash > 0 ? '#fff' : e.color;
         ctx.fillStyle = e.hitFlash > 0 ? '#fff' : e.color;
         ctx.strokeStyle = '#fff';
@@ -715,7 +796,7 @@ export default function App() {
       ctx.globalAlpha = 1.0;
 
       // Draw Player Chain (Rope)
-      ctx.shadowBlur = s.isOverdrive ? 20 : 10;
+      ctx.shadowBlur = s.isOverdrive ? performance.ropeGlow * 2 : performance.ropeGlow;
       ctx.shadowColor = s.isOverdrive ? '#fff' : '#0ff';
       ctx.strokeStyle = s.isOverdrive ? '#fff' : '#0ff';
       ctx.lineWidth = s.isOverdrive ? 6 : 3;
@@ -730,7 +811,7 @@ export default function App() {
       if (s.invulnTimer % 10 < 5) { // Blink if invulnerable
         const core = s.nodes[0];
         ctx.fillStyle = '#0ff';
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = performance.ropeGlow * 2;
         ctx.beginPath();
         ctx.arc(core.x, core.y, CORE_RADIUS, 0, Math.PI * 2);
         ctx.fill();
@@ -776,7 +857,7 @@ export default function App() {
       }
 
       // Mace Head
-      ctx.shadowBlur = s.isOverdrive ? 40 : 15 + maceSpeed;
+      ctx.shadowBlur = s.isOverdrive ? performance.overdriveMaceGlow : performance.maceGlowBase + maceSpeed * (performance.isMobile ? 0.55 : 1);
       
       if (s.isOverdrive) {
         ctx.shadowColor = '#fff';
@@ -819,9 +900,10 @@ export default function App() {
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mouseup', handleMouseUp);
+      canvas.removeEventListener('pointermove', handlePointerMove);
+      canvas.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
       cancelAnimationFrame(reqRef.current);
     };
   }, [gameState]);
@@ -832,7 +914,7 @@ export default function App() {
       {/* Game Canvas */}
       <canvas 
         ref={canvasRef} 
-        className="absolute top-0 left-0 w-full h-full block cursor-none"
+        className="absolute top-0 left-0 w-full h-full block cursor-none touch-none"
       />
 
       {/* --- UI HUD --- */}
