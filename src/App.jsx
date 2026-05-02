@@ -119,16 +119,9 @@ export default function App() {
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(directUrl)}`;
 
     try {
-      let res = await fetch(directUrl);
-      let data;
-      
-      if (!res.ok) {
-          const proxyRes = await fetch(proxyUrl);
-          const proxyData = await proxyRes.json();
-          data = JSON.parse(proxyData.contents);
-      } else {
-          data = await res.json();
-      }
+      const res = await fetch(proxyUrl);
+      const proxyData = await res.json();
+      const data = JSON.parse(proxyData.contents);
 
       if (data && data.dreamlo && data.dreamlo.leaderboard) {
         let entries = data.dreamlo.leaderboard.entry;
@@ -145,9 +138,11 @@ export default function App() {
     setIsSubmitting(true);
     localStorage.setItem('orbital_smash_name', playerName);
     try {
-      const submitUrl = `https://dreamlo.com/lb/${DREAMLO_PRIVATE}/add/${encodeURIComponent(playerName)}/${score}`;
-      await fetch(submitUrl, { mode: 'no-cors' }); // no-cors is enough for a fire-and-forget submission
-      await new Promise(r => setTimeout(r, 500)); // wait for propagation
+      const addUrl = `https://dreamlo.com/lb/${DREAMLO_PRIVATE}/add/${encodeURIComponent(playerName)}/${score}`;
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(addUrl)}`;
+      
+      await fetch(proxyUrl);
+      await new Promise(r => setTimeout(r, 1000));
       await fetchLeaderboard();
       setGameState('menu');
     } catch (e) { console.error("Score submission failed", e); }
