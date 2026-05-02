@@ -12,6 +12,65 @@ const BASE_ENEMY_SPAWN_RATE = 100; // Frames between spawns (Increased from 60 f
 const DREAMLO_PUBLIC = "69f664cb8f40bb1068bd441a";
 const DREAMLO_PRIVATE = "qJcEBUUmAE6ApG2ZQjVRiw4nBSAtJFnUGNixUKRstFdA";
 
+const buildDreamloUrl = (path) => `http://dreamlo.com/lb/${path}`;
+const buildProxyUrls = (url) => [
+  `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  `https://everyorigin.jwvbremen.nl/get?url=${encodeURIComponent(url)}`,
+  `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+];
+
+const parseDreamloResponse = async (response, proxyUrl) => {
+  const body = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Proxy request failed (${response.status}) via ${proxyUrl}`);
+  }
+
+  try {
+    return JSON.parse(body);
+  } catch {
+    const wrapped = JSON.parse(body);
+    if (typeof wrapped?.contents === 'string') {
+      return JSON.parse(wrapped.contents);
+    }
+    throw new Error(`Unexpected proxy payload from ${proxyUrl}`);
+  }
+};
+
+const fetchDreamloJson = async (path) => {
+  const targetUrl = `${buildDreamloUrl(path)}${path.includes('?') ? '&' : '?'}_=${Date.now()}`;
+  let lastError = null;
+
+  for (const proxyUrl of buildProxyUrls(targetUrl)) {
+    try {
+      const response = await fetch(proxyUrl, { cache: 'no-store' });
+      return await parseDreamloResponse(response, proxyUrl);
+    } catch (error) {
+      lastError = error;
+      console.warn(`Dreamlo proxy failed: ${proxyUrl}`, error);
+    }
+  }
+
+  throw lastError ?? new Error('Unable to reach Dreamlo through any proxy');
+};
+
+const normalizeLeaderboardEntries = (data) => {
+  let entries = data?.dreamlo?.leaderboard?.entry;
+  if (!entries) return [];
+
+  if (!Array.isArray(entries)) {
+    entries = [entries];
+  }
+
+  return entries
+    .map((entry) => ({
+      ...entry,
+      score: Number(entry.score) || 0,
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+};
+
 // --- AUDIO SYSTEM (Synthesized Retro SFX) ---
 class AudioSys {
   constructor() {
@@ -115,21 +174,9 @@ export default function App() {
   const stateRef = useRef(null);
 
   const fetchLeaderboard = async () => {
-    const directUrl = `http://dreamlo.com/lb/${DREAMLO_PUBLIC}/json`;
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(directUrl)}`;
-
     try {
-      const res = await fetch(proxyUrl);
-      const proxyData = await res.json();
-      const data = JSON.parse(proxyData.contents);
-
-      if (data && data.dreamlo && data.dreamlo.leaderboard) {
-        let entries = data.dreamlo.leaderboard.entry;
-        if (entries) {
-            if (!Array.isArray(entries)) entries = [entries];
-            setLeaderboard(entries.slice(0, 10));
-        }
-      }
+      const data = await fetchDreamloJson(`${DREAMLO_PUBLIC}/json`);
+      setLeaderboard(normalizeLeaderboardEntries(data));
     } catch (e) { console.error("Leaderboard fetch failed", e); }
   };
 
@@ -138,10 +185,7 @@ export default function App() {
     setIsSubmitting(true);
     localStorage.setItem('orbital_smash_name', playerName);
     try {
-      const addUrl = `http://dreamlo.com/lb/${DREAMLO_PRIVATE}/add/${encodeURIComponent(playerName)}/${score}`;
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(addUrl)}`;
-      
-      await fetch(proxyUrl);
+      await fetchDreamloJson(`${DREAMLO_PRIVATE}/add/${encodeURIComponent(playerName.trim())}/${score}`);
       await new Promise(r => setTimeout(r, 1000));
       await fetchLeaderboard();
       setGameState('menu');
