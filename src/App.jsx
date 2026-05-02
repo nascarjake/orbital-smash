@@ -219,6 +219,7 @@ export default function App() {
           coreFollow: 0.22,
           friction: 0.92,
           constraintIterations: 3,
+          renderScale: 0.8,
           trailLength: 8,
           overdriveTrailLength: 14,
           particleMultiplier: 0.55,
@@ -241,6 +242,7 @@ export default function App() {
           coreFollow: 0.15,
           friction: 0.95,
           constraintIterations: 4,
+          renderScale: 1,
           trailLength: 12,
           overdriveTrailLength: 20,
           particleMultiplier: 1,
@@ -318,10 +320,12 @@ export default function App() {
 
     // Handle Window Resize
     const handleResize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
       s.width = window.innerWidth;
       s.height = window.innerHeight;
+      const renderScale = perf.renderScale ?? 1;
+      canvas.width = Math.floor(s.width * renderScale);
+      canvas.height = Math.floor(s.height * renderScale);
+      ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
     };
     window.addEventListener('resize', handleResize);
     handleResize();
@@ -894,11 +898,11 @@ export default function App() {
     // The Animation Loop
     let lastTime = window.performance.now();
     let accumulator = 0;
-    const loop = (time) => {
+    const mobileLoop = (time) => {
       const deltaMs = Math.min(50, time - lastTime || FRAME_DURATION);
       lastTime = time;
       accumulator += deltaMs;
-      const maxSteps = perf.isMobile ? 2 : 3;
+      const maxSteps = 4;
       let steps = 0;
 
       while (accumulator >= FRAME_DURATION && steps < maxSteps) {
@@ -912,9 +916,14 @@ export default function App() {
       }
 
       draw();
-      reqRef.current = requestAnimationFrame(loop);
+      reqRef.current = requestAnimationFrame(mobileLoop);
     };
-    reqRef.current = requestAnimationFrame(loop);
+    const desktopLoop = () => {
+      update();
+      draw();
+      reqRef.current = requestAnimationFrame(desktopLoop);
+    };
+    reqRef.current = requestAnimationFrame(perf.isMobile ? mobileLoop : desktopLoop);
 
     return () => {
       window.removeEventListener('resize', handleResize);
