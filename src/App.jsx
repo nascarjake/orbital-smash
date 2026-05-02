@@ -115,7 +115,7 @@ export default function App() {
   const stateRef = useRef(null);
 
   const fetchLeaderboard = async () => {
-    const directUrl = `https://dreamlo.com/lb/${DREAMLO_PUBLIC}/json`;
+    const directUrl = `http://dreamlo.com/lb/${DREAMLO_PUBLIC}/json`;
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(directUrl)}`;
 
     try {
@@ -138,7 +138,7 @@ export default function App() {
     setIsSubmitting(true);
     localStorage.setItem('orbital_smash_name', playerName);
     try {
-      const addUrl = `https://dreamlo.com/lb/${DREAMLO_PRIVATE}/add/${encodeURIComponent(playerName)}/${score}`;
+      const addUrl = `http://dreamlo.com/lb/${DREAMLO_PRIVATE}/add/${encodeURIComponent(playerName)}/${score}`;
       const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(addUrl)}`;
       
       await fetch(proxyUrl);
