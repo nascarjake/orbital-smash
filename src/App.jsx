@@ -117,6 +117,34 @@ const POWERUP_KEY = [
   { name: 'Shield', detail: 'Blocks one core hit.', color: '#38bdf8', icon: Shield },
 ];
 
+const TUTORIAL_STEPS = [
+  {
+    title: 'Move The Core',
+    body: 'Your cursor or finger pulls the glowing core. The chain follows with weight, so lead your swing instead of chasing enemies directly.',
+    cue: 'Drag the core',
+  },
+  {
+    title: 'Build Momentum',
+    body: 'The mace deals real damage when it is moving fast. Wide arcs and reversals make harder hits than tiny movements.',
+    cue: 'Swing wide',
+  },
+  {
+    title: 'Smash And Chain',
+    body: 'Fast hits destroy enemies, grow your combo, and raise score gains. If the mace is slow, it mostly pushes enemies back.',
+    cue: 'Fast hits score',
+  },
+  {
+    title: 'Collect Energy',
+    body: 'Cyan orbs fill the Overdrive meter. Other drops can heal, shield, freeze, magnetize, or detonate the swarm.',
+    cue: 'Grab drops',
+  },
+  {
+    title: 'Trigger Overdrive',
+    body: 'At 100% energy, press or hold click/touch. Overdrive spends the full meter, makes the mace huge, and lets it shred enemies for about five seconds.',
+    cue: '100% = unleash',
+  },
+];
+
 const UNLOCKABLES = [
   {
     id: 'skin_sunforge',
@@ -383,6 +411,10 @@ export default function App() {
   const [celebrations, setCelebrations] = useState([]);
   const [activeEffects, setActiveEffects] = useState([]);
   const [showBadges, setShowBadges] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [showUnlocks, setShowUnlocks] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
   const isLocalMode = isLocalRuntime();
   
   const canvasRef = useRef(null);
@@ -477,6 +509,16 @@ export default function App() {
   useEffect(() => {
     audio.setSoundPack(loadout.sound_glass && unlocks.sound_glass ? 'glass' : 'classic');
   }, [loadout.sound_glass, unlocks.sound_glass]);
+
+  useEffect(() => {
+    if (!showTutorial) return;
+
+    const id = window.setInterval(() => {
+      setTutorialStep((step) => (step + 1) % TUTORIAL_STEPS.length);
+    }, 5200);
+
+    return () => window.clearInterval(id);
+  }, [showTutorial]);
 
   const toggleLoadout = (id) => {
     if (!unlocks[id]) return;
@@ -1639,6 +1681,182 @@ export default function App() {
         </div>
       )}
 
+      {showKey && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/85 p-4 backdrop-blur-md">
+          <div className="max-h-[86vh] w-full max-w-4xl overflow-y-auto rounded-lg border border-fuchsia-400/30 bg-gray-900 p-6 shadow-[0_0_45px_rgba(217,70,239,0.16)]">
+            <div className="mb-5 flex items-center justify-between gap-4 border-b border-gray-800 pb-3">
+              <div className="flex items-center gap-2 text-fuchsia-200">
+                <Zap size={20} />
+                <h2 className="text-2xl font-black tracking-widest">COMBAT KEY</h2>
+              </div>
+              <button onClick={() => setShowKey(false)} className="rounded border border-gray-700 bg-gray-950 px-3 py-2 text-xs font-bold uppercase tracking-widest text-gray-300 transition-colors hover:border-fuchsia-400 hover:text-fuchsia-200">
+                Close
+              </button>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-2">
+              <div>
+                <div className="mb-3 text-xs font-bold uppercase tracking-widest text-gray-500">Enemies</div>
+                <div className="space-y-2">
+                  {ENEMY_KEY.map((item) => (
+                    <div key={item.name} className="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-950/60 p-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-gray-900">
+                        <div
+                          className="h-5 w-5 shadow-[0_0_12px_currentColor]"
+                          style={{
+                            color: item.color,
+                            backgroundColor: item.color,
+                            borderRadius: item.shape === 'circle' ? '999px' : item.shape === 'square' ? '2px' : '3px',
+                            clipPath: item.shape === 'triangle' ? 'polygon(50% 0, 100% 86%, 0 86%)' : undefined,
+                            transform: item.shape === 'diamond' ? 'rotate(45deg)' : undefined,
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <div className="text-sm font-black text-white">{item.name}</div>
+                        <div className="text-xs leading-snug text-gray-400">{item.detail}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-3 text-xs font-bold uppercase tracking-widest text-gray-500">Powerups</div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {POWERUP_KEY.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div key={item.name} className="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-950/60 p-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-gray-900" style={{ color: item.color }}>
+                          <Icon size={18} />
+                        </div>
+                        <div>
+                          <div className="text-sm font-black text-white">{item.name}</div>
+                          <div className="text-xs leading-snug text-gray-400">{item.detail}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUnlocks && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/85 p-4 backdrop-blur-md">
+          <div className="max-h-[86vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-yellow-300/30 bg-gray-900 p-6 shadow-[0_0_45px_rgba(250,204,21,0.13)]">
+            <div className="mb-5 flex items-center justify-between gap-4 border-b border-gray-800 pb-3">
+              <div className="flex items-center gap-2 text-yellow-200">
+                <Sparkles size={20} />
+                <h2 className="text-2xl font-black tracking-widest">UNLOCKS</h2>
+              </div>
+              <button onClick={() => setShowUnlocks(false)} className="rounded border border-gray-700 bg-gray-950 px-3 py-2 text-xs font-bold uppercase tracking-widest text-gray-300 transition-colors hover:border-yellow-300 hover:text-yellow-100">
+                Close
+              </button>
+            </div>
+
+            <div className="grid gap-2">
+              {UNLOCKABLES.map((item) => {
+                const isUnlocked = Boolean(unlocks[item.id]);
+                const isEnabled = Boolean(loadout[item.id]);
+                const TypeIcon = item.type === 'skin' ? Palette : item.type === 'sound' ? Music : item.type === 'background' ? Eye : Sparkles;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => toggleLoadout(item.id)}
+                    disabled={!isUnlocked}
+                    className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
+                      isUnlocked
+                        ? isEnabled
+                          ? 'border-cyan-300/60 bg-cyan-950/40 text-cyan-100'
+                          : 'border-gray-700 bg-gray-950/70 text-gray-200 hover:border-cyan-400/50'
+                        : 'border-gray-800 bg-gray-950/50 text-gray-600'
+                    }`}
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-gray-950">
+                      <TypeIcon size={17} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-black">{item.title}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-widest">{isUnlocked ? (isEnabled ? 'On' : 'Off') : 'Locked'}</span>
+                      </div>
+                      <div className="mt-1 text-xs leading-snug text-gray-400">{isUnlocked ? item.desc : item.requirement}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTutorial && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/90 p-4 backdrop-blur-md">
+          <div className="grid max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-cyan-400/30 bg-gray-900 shadow-[0_0_55px_rgba(34,211,238,0.18)] md:grid-cols-[1.35fr_0.9fr]">
+            <div className={`tutorial-stage tutorial-step-${tutorialStep}`}>
+              <div className="tutorial-orbit-core" />
+              <div className="tutorial-chain" />
+              <div className="tutorial-mace" />
+              <div className="tutorial-enemy tutorial-enemy-one" />
+              <div className="tutorial-enemy tutorial-enemy-two" />
+              <div className="tutorial-pickup" />
+              <div className="tutorial-overdrive-ring" />
+              <div className="tutorial-caption">{TUTORIAL_STEPS[tutorialStep].cue}</div>
+            </div>
+
+            <div className="flex flex-col justify-between gap-5 p-6">
+              <div>
+                <div className="mb-2 text-xs font-bold uppercase tracking-widest text-cyan-300">
+                  Tutorial {tutorialStep + 1}/{TUTORIAL_STEPS.length}
+                </div>
+                <h2 className="text-3xl font-black tracking-tight text-white">{TUTORIAL_STEPS[tutorialStep].title}</h2>
+                <p className="mt-4 text-sm leading-relaxed text-gray-300">{TUTORIAL_STEPS[tutorialStep].body}</p>
+              </div>
+
+              <div>
+                <div className="mb-4 flex gap-2">
+                  {TUTORIAL_STEPS.map((step, index) => (
+                    <button
+                      key={step.title}
+                      onClick={() => setTutorialStep(index)}
+                      className={`h-2 flex-1 rounded-full transition-colors ${index === tutorialStep ? 'bg-cyan-300' : 'bg-gray-700'}`}
+                      aria-label={`Tutorial step ${index + 1}`}
+                    />
+                  ))}
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <button
+                    onClick={() => setTutorialStep((step) => (step + TUTORIAL_STEPS.length - 1) % TUTORIAL_STEPS.length)}
+                    className="rounded-lg border border-gray-700 bg-gray-950 px-4 py-3 text-sm font-bold uppercase tracking-widest text-gray-200 transition-colors hover:border-cyan-400 hover:text-cyan-200"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => setTutorialStep((step) => (step + 1) % TUTORIAL_STEPS.length)}
+                    className="rounded-lg border border-cyan-400/50 bg-cyan-950/60 px-4 py-3 text-sm font-bold uppercase tracking-widest text-cyan-100 transition-colors hover:bg-cyan-900/70"
+                  >
+                    Next
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowTutorial(false);
+                      setTutorialStep(0);
+                    }}
+                    className="rounded-lg bg-cyan-600 px-4 py-3 text-sm font-black uppercase tracking-widest text-white transition-colors hover:bg-cyan-500"
+                  >
+                    Got It
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* --- UI HUD --- */}
       {gameState === 'playing' && (
         <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-start pointer-events-none z-10">
@@ -1686,253 +1904,74 @@ export default function App() {
 
       {/* --- MENU UI --- */}
       {gameState === 'menu' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/85 backdrop-blur-sm z-20 p-4 overflow-y-auto">
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm z-20 p-4 overflow-hidden">
           <div className="pointer-events-none absolute inset-0 menu-grid opacity-70" />
           <div className="pointer-events-none absolute left-[8%] top-[18%] h-2 w-2 rounded-full bg-cyan-300 menu-spark" />
           <div className="pointer-events-none absolute right-[14%] top-[24%] h-2 w-2 rounded-full bg-fuchsia-300 menu-spark menu-spark-delay" />
           <div className="pointer-events-none absolute bottom-[14%] left-[20%] h-1.5 w-1.5 rounded-full bg-yellow-200 menu-spark menu-spark-slow" />
 
-          <div className="relative group mb-6 text-center">
-            <div className="absolute -inset-2 bg-gradient-to-r from-cyan-500 via-fuchsia-500 to-yellow-300 rounded-lg blur opacity-80 menu-title-glow"></div>
-            <h1 className="relative text-5xl md:text-7xl font-black italic tracking-tighter text-white drop-shadow-2xl px-8 py-4 bg-gray-900/95 rounded-lg border border-white/10">
-              ORBITAL SMASH
-            </h1>
-            <div className="relative mt-3 text-xs font-bold uppercase tracking-[0.36em] text-cyan-200/80">
-              Swing hard. Chain combos. Become the hazard.
-            </div>
-          </div>
-          
-          <div className="relative flex flex-col xl:flex-row gap-5 w-full max-w-7xl items-stretch">
-            {/* Left Column: Instructions */}
-            <div className="flex-1 space-y-5 text-gray-300 bg-gray-900/60 p-6 rounded-lg border border-cyan-400/20 shadow-[0_0_35px_rgba(34,211,238,0.08)] menu-panel">
-                <p className="text-lg leading-relaxed text-center text-cyan-50">
-                You are the weapon. Swing your mouse to build momentum and obliterate the swarm.
-                </p>
-
-                <div className="rounded-lg border border-cyan-400/20 bg-cyan-950/20 p-4">
-                  <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-cyan-200">
-                    <Play size={14} fill="currentColor" />
-                    Quick Tutorial
-                  </div>
-                  <div className="grid gap-2 text-sm text-gray-300">
-                    <div className="flex gap-3">
-                      <span className="font-black text-cyan-300">1</span>
-                      <span>Move your mouse or finger to drag the glowing core.</span>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="font-black text-cyan-300">2</span>
-                      <span>The mace follows on a chain. Swing wide circles to build speed.</span>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="font-black text-cyan-300">3</span>
-                      <span>Hit enemies with a fast mace. Slow taps mostly shove them away.</span>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="font-black text-cyan-300">4</span>
-                      <span>Keep smashing quickly to grow your combo and score multiplier.</span>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="font-black text-cyan-300">5</span>
-                      <span>Protect the core. Three hits ends the run unless a shield saves you.</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 gap-4 text-sm bg-gray-950/60 p-4 rounded-lg border border-gray-800">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-gray-800 rounded text-cyan-400"><Trophy size={16}/></div>
-                    <span>Fast Swings = More Damage</span>
-                </div>
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-gray-800 rounded text-yellow-400"><Zap size={16}/></div>
-                    <span>Collect Orbs for Energy</span>
-                </div>
-                <div className="flex items-center gap-3">
-                    <div className="flex gap-1 p-2 bg-gray-800 rounded text-rose-400"><Bomb size={14}/><Snowflake size={14}/><Magnet size={14}/></div>
-                    <span>Bomb, Freeze, Magnet, Shield, and Giant pickups can drop</span>
-                </div>
-                <div className="flex items-center gap-3 pt-4 border-t border-gray-800">
-                    <div className="px-3 py-1 bg-gray-800 rounded border border-gray-600 font-bold">CLICK</div>
-                    <span className="text-white font-bold tracking-widest text-xs">Activate Overdrive (100% Energy)</span>
-                </div>
-                </div>
-
-                <div className="rounded-lg border border-yellow-300/20 bg-yellow-950/15 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-yellow-200">
-                    <Zap size={14} fill="currentColor" />
-                    How Overdrive Works
-                  </div>
-                  <div className="space-y-2 text-sm leading-relaxed text-gray-300">
-                    <p>Collect cyan energy orbs until the Overdrive meter reaches 100%.</p>
-                    <p>When it is full, press or hold click/touch to spend the whole meter and enter Overdrive for about five seconds.</p>
-                    <p>During Overdrive, the mace becomes huge, enemies are always vulnerable, pickups pull in harder, and the arena shakes while you carve through the swarm.</p>
-                  </div>
-                </div>
-
-                <button
-                onClick={startGame}
-                className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-cyan-600 text-xl rounded-lg hover:bg-cyan-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-600 w-full overflow-hidden shadow-[0_0_30px_rgba(34,211,238,0.25)] menu-start-button"
-                >
-                <div className="absolute inset-0 bg-white/20 group-hover:translate-x-full -translate-x-full transition-transform duration-500 ease-out skew-x-12"></div>
-                <Play className="mr-2" size={24} fill="currentColor" />
-                INITIATE NEON CORE
+          <div className="relative grid h-[min(760px,92vh)] w-full max-w-6xl grid-rows-[auto_1fr_auto] gap-4 rounded-lg border border-cyan-400/20 bg-gray-950/40 p-5 shadow-[0_0_60px_rgba(34,211,238,0.12)] menu-panel">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.36em] text-cyan-200/80">Arcade survival</div>
+                <h1 className="mt-1 text-5xl font-black italic tracking-tighter text-white drop-shadow-2xl md:text-7xl">
+                  ORBITAL SMASH
+                </h1>
+              </div>
+              <div className="hidden gap-2 text-xs font-bold uppercase tracking-widest text-gray-400 sm:flex">
+                <button onClick={() => setShowBadges(true)} className="rounded border border-gray-700 bg-gray-950/70 px-3 py-2 hover:border-cyan-400 hover:text-cyan-200">
+                  Badges {Object.keys(achievements).length}/{ACHIEVEMENTS.length}
                 </button>
-
-                <div className="rounded-lg border border-gray-800 bg-gray-950/60 p-4">
-                  <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-500">
-                    <Sparkles size={14} />
-                    Permanent Unlocks
-                  </div>
-                  <div className="grid gap-2">
-                    {UNLOCKABLES.map((item) => {
-                      const isUnlocked = Boolean(unlocks[item.id]);
-                      const isEnabled = Boolean(loadout[item.id]);
-                      const TypeIcon = item.type === 'skin' ? Palette : item.type === 'sound' ? Music : item.type === 'background' ? Eye : Sparkles;
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => toggleLoadout(item.id)}
-                          disabled={!isUnlocked}
-                          className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
-                            isUnlocked
-                              ? isEnabled
-                                ? 'border-cyan-300/60 bg-cyan-950/40 text-cyan-100'
-                                : 'border-gray-700 bg-gray-900/70 text-gray-200 hover:border-cyan-400/50'
-                              : 'border-gray-800 bg-gray-950/50 text-gray-600'
-                          }`}
-                        >
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-gray-950">
-                            <TypeIcon size={16} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-sm font-black">{item.title}</span>
-                              <span className="text-[10px] font-bold uppercase tracking-widest">{isUnlocked ? (isEnabled ? 'On' : 'Off') : 'Locked'}</span>
-                            </div>
-                            <div className="mt-1 text-xs leading-snug text-gray-400">{isUnlocked ? item.desc : item.requirement}</div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-            </div>
-
-            {/* Middle Column: Combat Key */}
-            <div className="flex-[1.35] bg-gray-900/60 p-6 rounded-lg border border-fuchsia-400/20 shadow-[0_0_35px_rgba(217,70,239,0.08)] menu-panel menu-panel-delayed">
-              <div className="mb-4 flex items-center gap-2 border-b border-gray-800 pb-2 text-fuchsia-200">
-                <Zap size={18} />
-                <h2 className="text-xl font-bold tracking-widest">COMBAT KEY</h2>
-              </div>
-
-              <div className="grid gap-5 lg:grid-cols-2">
-                <div>
-                  <div className="mb-3 text-xs font-bold uppercase tracking-widest text-gray-500">Enemies</div>
-                  <div className="space-y-2">
-                    {ENEMY_KEY.map((item) => (
-                      <div key={item.name} className="flex items-center gap-3 rounded-lg border border-gray-800/80 bg-gray-950/55 p-3 transition-colors hover:border-fuchsia-300/40">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-gray-900">
-                          <div
-                            className="h-5 w-5 shadow-[0_0_12px_currentColor]"
-                            style={{
-                              color: item.color,
-                              backgroundColor: item.color,
-                              borderRadius: item.shape === 'circle' ? '999px' : item.shape === 'square' ? '2px' : '3px',
-                              clipPath: item.shape === 'triangle' ? 'polygon(50% 0, 100% 86%, 0 86%)' : undefined,
-                              transform: item.shape === 'diamond' ? 'rotate(45deg)' : undefined,
-                            }}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-black text-white">{item.name}</div>
-                          <div className="text-xs leading-snug text-gray-400">{item.detail}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="mb-3 text-xs font-bold uppercase tracking-widest text-gray-500">Powerups</div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
-                    {POWERUP_KEY.map((item) => {
-                      const Icon = item.icon;
-                      return (
-                        <div key={item.name} className="flex items-center gap-3 rounded-lg border border-gray-800/80 bg-gray-950/55 p-3 transition-colors hover:border-cyan-300/40">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-gray-900" style={{ color: item.color }}>
-                            <Icon size={18} />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-sm font-black text-white">{item.name}</div>
-                            <div className="text-xs leading-snug text-gray-400">{item.detail}</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                <div className="rounded border border-gray-700 bg-gray-950/70 px-3 py-2 text-yellow-200">
+                  Best {localHighScore.toLocaleString()}
                 </div>
               </div>
             </div>
 
-            {/* Right Column: Leaderboard */}
-            <div className="w-full xl:w-80 bg-gray-900/60 p-6 rounded-lg border border-yellow-400/20 flex flex-col shadow-[0_0_35px_rgba(250,204,21,0.07)] menu-panel menu-panel-late">
-                <div className="flex items-center gap-2 mb-4 text-cyan-400 border-b border-gray-800 pb-2">
-                    <Trophy size={20}/>
-                    <h2 className="text-xl font-bold tracking-widest">{isLocalMode ? 'LOCAL PROGRESS' : 'HALL OF FAME'}</h2>
+            <div className="relative min-h-0 overflow-hidden rounded-lg border border-gray-800 bg-gray-950/70">
+              <div className="menu-demo-grid" />
+              <div className="menu-demo-core" />
+              <div className="menu-demo-chain" />
+              <div className="menu-demo-mace" />
+              <div className="menu-demo-enemy menu-demo-enemy-a" />
+              <div className="menu-demo-enemy menu-demo-enemy-b" />
+              <div className="menu-demo-pickup" />
+              <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-end justify-between gap-3">
+                <div className="max-w-md text-lg font-bold text-cyan-50 md:text-2xl">
+                  Swing the chain. Build speed. Smash the swarm.
                 </div>
-                <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg border border-gray-800 bg-gray-950/50 p-3">
-                    <div className="text-gray-500 uppercase tracking-widest">Local Best</div>
-                    <div className="text-lg font-black text-yellow-300">{localHighScore.toLocaleString()}</div>
-                  </div>
-                  <div className="rounded-lg border border-gray-800 bg-gray-950/50 p-3">
-                    <div className="text-gray-500 uppercase tracking-widest">Badges</div>
-                    <button
-                      onClick={() => setShowBadges(true)}
-                      className="text-left text-lg font-black text-cyan-300 underline decoration-cyan-400/40 underline-offset-4 transition-colors hover:text-cyan-100"
-                    >
-                      {Object.keys(achievements).length}/{ACHIEVEMENTS.length}
-                    </button>
-                  </div>
+                <div className="rounded border border-yellow-300/30 bg-yellow-950/40 px-3 py-2 text-xs font-bold uppercase tracking-widest text-yellow-100">
+                  Overdrive at 100%
                 </div>
-                {!isLocalMode && (
-                <div className="flex-1 space-y-2 overflow-y-auto max-h-64 pr-2">
-                    {leaderboard.length > 0 ? leaderboard.map((entry, i) => (
-                        <div key={i} className="flex justify-between items-center text-sm bg-gray-950/50 p-2 rounded border border-gray-800/50">
-                            <span className="text-gray-500 w-6">{i + 1}.</span>
-                            <span className="flex-1 text-white font-bold truncate px-2">{entry.name}</span>
-                            <span className="text-cyan-400 font-mono">{Number(entry.score).toLocaleString()}</span>
-                        </div>
-                    )) : (
-                        <div className="text-center text-gray-600 py-8 italic text-sm">
-                            Scanning satellites...
-                        </div>
-                    )}
-                </div>
-                )}
-                <div className="mt-4 border-t border-gray-800 pt-3">
-                  <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-500">
-                    <Award size={14} />
-                    Local Achievements
-                    <button
-                      onClick={() => setShowBadges(true)}
-                      className="ml-auto text-cyan-400 transition-colors hover:text-cyan-200"
-                    >
-                      View
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {ACHIEVEMENTS.slice(0, 6).map((item) => (
-                      <div key={item.id} title={item.desc} className={`truncate rounded border px-2 py-1 text-xs font-bold ${achievements[item.id] ? 'border-yellow-400/50 bg-yellow-950/40 text-yellow-200' : 'border-gray-800 bg-gray-950/40 text-gray-600'}`}>
-                        {item.title}
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-[1.3fr_1fr]">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button onClick={startGame} className="group relative inline-flex items-center justify-center overflow-hidden rounded-lg bg-cyan-600 px-6 py-4 text-xl font-black text-white shadow-[0_0_30px_rgba(34,211,238,0.28)] transition-colors hover:bg-cyan-500 menu-start-button">
+                  <div className="absolute inset-0 bg-white/20 group-hover:translate-x-full -translate-x-full transition-transform duration-500 ease-out skew-x-12"></div>
+                  <Play className="mr-2" size={24} fill="currentColor" />
+                  PLAY
+                </button>
+                <button onClick={() => { setTutorialStep(0); setShowTutorial(true); }} className="inline-flex items-center justify-center rounded-lg border border-fuchsia-400/40 bg-fuchsia-950/40 px-6 py-4 text-lg font-black text-fuchsia-100 transition-colors hover:bg-fuchsia-900/60">
+                  <Sparkles className="mr-2" size={22} />
+                  TUTORIAL
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-xs font-bold uppercase tracking-widest">
+                <button onClick={() => setShowKey(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-cyan-400 hover:text-cyan-200">
+                  Key
+                </button>
+                <button onClick={() => setShowUnlocks(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-yellow-300 hover:text-yellow-100">
+                  Unlocks
+                </button>
+                <button onClick={() => setShowBadges(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-cyan-400 hover:text-cyan-200">
+                  Badges
+                </button>
+              </div>
             </div>
           </div>
-          
-          <p className="relative text-xs text-gray-500 mt-6 uppercase tracking-widest">Audio Required for Maximum Impact</p>
         </div>
       )}
 
