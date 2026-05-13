@@ -418,6 +418,8 @@ export default function App() {
   const isLocalMode = isLocalRuntime();
   
   const canvasRef = useRef(null);
+  const menuDemoCanvasRef = useRef(null);
+  const tutorialCanvasRef = useRef(null);
   const reqRef = useRef(null);
   const stateRef = useRef(null);
 
@@ -699,6 +701,267 @@ export default function App() {
     initEngine();
     setGameState('playing');
   };
+
+  useEffect(() => {
+    if (gameState !== 'menu' && !showTutorial) return;
+
+    const canvases = [
+      { canvas: menuDemoCanvasRef.current, mode: 'menu' },
+      { canvas: tutorialCanvasRef.current, mode: 'tutorial' },
+    ].filter((entry) => entry.canvas);
+
+    if (canvases.length === 0) return;
+
+    const scenes = canvases.map(({ canvas, mode }) => {
+      const nodes = Array.from({ length: NUM_NODES }, () => ({ x: 0, y: 0, oldX: 0, oldY: 0 }));
+      return { canvas, mode, nodes, trail: [], width: 0, height: 0 };
+    });
+
+    const resizeScene = (scene) => {
+      const rect = scene.canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.max(320, rect.width);
+      const height = Math.max(240, rect.height);
+
+      if (scene.width === width && scene.height === height) return;
+
+      scene.width = width;
+      scene.height = height;
+      scene.canvas.width = Math.floor(width * ratio);
+      scene.canvas.height = Math.floor(height * ratio);
+      const ctx = scene.canvas.getContext('2d');
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+      const cx = width * 0.45;
+      const cy = height * 0.45;
+      scene.nodes.forEach((node, index) => {
+        node.x = cx;
+        node.y = cy + index * (SEGMENT_LENGTH * 0.82);
+        node.oldX = node.x;
+        node.oldY = node.y;
+      });
+      scene.trail = [];
+    };
+
+    const targetFor = (scene, time) => {
+      const t = time / 1000;
+      const w = scene.width;
+      const h = scene.height;
+      const step = scene.mode === 'tutorial' ? tutorialStep : -1;
+
+      if (step === 0) {
+        return { x: w * 0.5 + Math.sin(t * 1.8) * w * 0.2, y: h * 0.48 + Math.sin(t * 2.4) * h * 0.08 };
+      }
+      if (step === 1) {
+        return { x: w * 0.5 + Math.cos(t * 2.2) * w * 0.18, y: h * 0.48 + Math.sin(t * 2.2) * h * 0.18 };
+      }
+      if (step === 2) {
+        return { x: w * 0.45 + Math.sin(t * 4.4) * w * 0.22, y: h * 0.48 + Math.cos(t * 3.3) * h * 0.16 };
+      }
+      if (step === 3) {
+        return { x: w * 0.55 + Math.sin(t * 1.7) * w * 0.12, y: h * 0.5 + Math.cos(t * 1.7) * h * 0.12 };
+      }
+      if (step === 4) {
+        return { x: w * 0.5 + Math.cos(t * 3.5) * w * 0.22, y: h * 0.48 + Math.sin(t * 3.5) * h * 0.18 };
+      }
+
+      return {
+        x: w * 0.48 + Math.cos(t * 1.35) * w * 0.19 + Math.sin(t * 2.4) * w * 0.05,
+        y: h * 0.47 + Math.sin(t * 1.35) * h * 0.2,
+      };
+    };
+
+    const updateChain = (scene, target) => {
+      const segmentLength = SEGMENT_LENGTH * 0.82;
+      const nodes = scene.nodes;
+
+      nodes[0].oldX = nodes[0].x;
+      nodes[0].oldY = nodes[0].y;
+      nodes[0].x += (target.x - nodes[0].x) * 0.18;
+      nodes[0].y += (target.y - nodes[0].y) * 0.18;
+
+      for (let i = 1; i < nodes.length; i++) {
+        const node = nodes[i];
+        const vx = (node.x - node.oldX) * 0.94;
+        const vy = (node.y - node.oldY) * 0.94;
+        node.oldX = node.x;
+        node.oldY = node.y;
+        node.x += vx;
+        node.y += vy;
+      }
+
+      for (let iter = 0; iter < 5; iter++) {
+        for (let i = 0; i < nodes.length - 1; i++) {
+          const n1 = nodes[i];
+          const n2 = nodes[i + 1];
+          const dx = n2.x - n1.x;
+          const dy = n2.y - n1.y;
+          const dist = Math.max(0.01, Math.hypot(dx, dy));
+          const diff = (segmentLength - dist) / dist;
+          const offsetX = dx * diff * 0.5;
+          const offsetY = dy * diff * 0.5;
+
+          if (i === 0) {
+            n2.x += offsetX * 2;
+            n2.y += offsetY * 2;
+          } else {
+            n1.x -= offsetX;
+            n1.y -= offsetY;
+            n2.x += offsetX;
+            n2.y += offsetY;
+          }
+        }
+      }
+
+      const mace = nodes[nodes.length - 1];
+      scene.trail.push({ x: mace.x, y: mace.y });
+      if (scene.trail.length > 18) scene.trail.shift();
+    };
+
+    const drawShape = (ctx, x, y, type, color, radius = 16) => {
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      if (type === 'diamond') {
+        ctx.moveTo(x, y - radius);
+        ctx.lineTo(x + radius, y);
+        ctx.lineTo(x, y + radius);
+        ctx.lineTo(x - radius, y);
+      } else if (type === 'triangle') {
+        ctx.moveTo(x, y - radius);
+        ctx.lineTo(x + radius, y + radius);
+        ctx.lineTo(x - radius, y + radius);
+      } else if (type === 'square') {
+        ctx.rect(x - radius, y - radius, radius * 2, radius * 2);
+      } else {
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    };
+
+    const drawScene = (scene, time) => {
+      resizeScene(scene);
+      const ctx = scene.canvas.getContext('2d');
+      const w = scene.width;
+      const h = scene.height;
+      const target = targetFor(scene, time);
+      const step = scene.mode === 'tutorial' ? tutorialStep : -1;
+
+      updateChain(scene, target);
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = 'rgba(3, 7, 18, 0.94)';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.strokeStyle = 'rgba(34, 211, 238, 0.08)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < w; x += 44) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = 0; y < h; y += 44) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      const enemies = [
+        { x: w * 0.72, y: h * 0.36, type: 'diamond', color: '#f0f' },
+        { x: w * 0.24, y: h * 0.67, type: 'triangle', color: '#facc15' },
+        { x: w * 0.76, y: h * 0.68, type: 'square', color: '#22c55e', radius: 13 },
+      ];
+
+      enemies.forEach((enemy, index) => {
+        const pulse = 1 + Math.sin(time / 240 + index) * 0.08;
+        drawShape(ctx, enemy.x, enemy.y, enemy.type, enemy.color, (enemy.radius ?? 16) * pulse);
+      });
+
+      if (step === 3 || scene.mode === 'menu') {
+        ctx.fillStyle = '#22d3ee';
+        ctx.shadowColor = '#22d3ee';
+        ctx.shadowBlur = 16;
+        ctx.beginPath();
+        const pickupPull = step === 3 ? (Math.sin(time / 360) + 1) * 0.5 : 0;
+        ctx.arc(w * (0.58 - pickupPull * 0.1), h * (0.66 - pickupPull * 0.14), 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const nodes = scene.nodes;
+      const core = nodes[0];
+      const mace = nodes[nodes.length - 1];
+      const maceSpeed = Math.hypot(mace.x - mace.oldX, mace.y - mace.oldY);
+      const overdrive = step === 4;
+
+      if (scene.trail.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(scene.trail[0].x, scene.trail[0].y);
+        scene.trail.forEach((point) => ctx.lineTo(point.x, point.y));
+        ctx.strokeStyle = overdrive ? 'rgba(255,255,255,0.55)' : 'rgba(249,115,22,0.45)';
+        ctx.lineWidth = overdrive ? 28 : 18;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+      }
+
+      ctx.shadowBlur = overdrive ? 20 : 10;
+      ctx.shadowColor = overdrive ? '#fff' : '#22d3ee';
+      ctx.strokeStyle = overdrive ? '#fff' : '#22d3ee';
+      ctx.lineWidth = overdrive ? 6 : 4;
+      ctx.beginPath();
+      ctx.moveTo(core.x, core.y);
+      for (let i = 1; i < nodes.length; i++) ctx.lineTo(nodes[i].x, nodes[i].y);
+      ctx.stroke();
+
+      ctx.fillStyle = '#67e8f9';
+      ctx.shadowColor = '#22d3ee';
+      ctx.shadowBlur = 24;
+      ctx.beginPath();
+      ctx.arc(core.x, core.y, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(core.x, core.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      const maceRadius = overdrive ? 34 : 21 + Math.min(9, maceSpeed * 0.08);
+      ctx.fillStyle = overdrive ? '#fff' : '#f97316';
+      ctx.shadowColor = overdrive ? '#fff' : '#f97316';
+      ctx.shadowBlur = overdrive ? 46 : 30;
+      ctx.beginPath();
+      ctx.arc(mace.x, mace.y, maceRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (step === 4) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(core.x, core.y, 40 + Math.sin(time / 180) * 18, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    };
+
+    const handlePreviewResize = () => scenes.forEach((scene) => { scene.width = 0; });
+    let frame = 0;
+    const loop = (time) => {
+      scenes.forEach((scene) => drawScene(scene, time));
+      frame = requestAnimationFrame(loop);
+    };
+
+    frame = requestAnimationFrame(loop);
+    window.addEventListener('resize', handlePreviewResize);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', handlePreviewResize);
+    };
+  }, [gameState, showTutorial, tutorialStep]);
 
   // The massive game loop
   useEffect(() => {
@@ -1797,14 +2060,8 @@ export default function App() {
       {showTutorial && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/90 p-4 backdrop-blur-md">
           <div className="grid max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-cyan-400/30 bg-gray-900 shadow-[0_0_55px_rgba(34,211,238,0.18)] md:grid-cols-[1.35fr_0.9fr]">
-            <div className={`tutorial-stage tutorial-step-${tutorialStep}`}>
-              <div className="tutorial-orbit-core" />
-              <div className="tutorial-chain" />
-              <div className="tutorial-mace" />
-              <div className="tutorial-enemy tutorial-enemy-one" />
-              <div className="tutorial-enemy tutorial-enemy-two" />
-              <div className="tutorial-pickup" />
-              <div className="tutorial-overdrive-ring" />
+            <div className="tutorial-stage">
+              <canvas ref={tutorialCanvasRef} className="absolute inset-0 h-full w-full" />
               <div className="tutorial-caption">{TUTORIAL_STEPS[tutorialStep].cue}</div>
             </div>
 
@@ -1929,13 +2186,7 @@ export default function App() {
             </div>
 
             <div className="relative min-h-0 overflow-hidden rounded-lg border border-gray-800 bg-gray-950/70">
-              <div className="menu-demo-grid" />
-              <div className="menu-demo-core" />
-              <div className="menu-demo-chain" />
-              <div className="menu-demo-mace" />
-              <div className="menu-demo-enemy menu-demo-enemy-a" />
-              <div className="menu-demo-enemy menu-demo-enemy-b" />
-              <div className="menu-demo-pickup" />
+              <canvas ref={menuDemoCanvasRef} className="absolute inset-0 h-full w-full" />
               <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-end justify-between gap-3">
                 <div className="max-w-md text-lg font-bold text-cyan-50 md:text-2xl">
                   Swing the chain. Build speed. Smash the swarm.

@@ -198,6 +198,15 @@ canvas {
   background: #020617;
 }
 
+.tutorial-stage::before,
+.tutorial-stage::after {
+  display: none;
+}
+
+.tutorial-stage canvas {
+  z-index: 0;
+}
+
 .tutorial-orbit-core {
   left: 44%;
   top: 46%;
@@ -247,6 +256,7 @@ canvas {
 
 .tutorial-caption {
   position: absolute;
+  z-index: 1;
   left: 50%;
   bottom: 24px;
   transform: translateX(-50%);
