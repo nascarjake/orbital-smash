@@ -85,7 +85,7 @@ const normalizeLeaderboardEntries = (data) => {
       score: Number(entry.score) || 0,
     }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
+    .slice(0, 50);
 };
 
 const ACHIEVEMENTS = [
@@ -229,9 +229,28 @@ const normalizeLocalScores = (scores) => (
         .map((entry) => ({ ...entry, score: Number(entry.score) || 0 }))
         .filter((entry) => entry.score > 0)
         .sort((a, b) => b.score - a.score)
-        .slice(0, 10)
+        .slice(0, 50)
     : []
 );
+
+const QUALITY_PRESETS = {
+  desktop: [
+    { renderScale: 1, particleMultiplier: 1, particleCap: 220, trailLength: 12, overdriveTrailLength: 20, shadowScale: 1, drawGrid: true, motionBlurAlpha: 0.3 },
+    { renderScale: 0.85, particleMultiplier: 0.75, particleCap: 150, trailLength: 9, overdriveTrailLength: 15, shadowScale: 0.65, drawGrid: true, motionBlurAlpha: 0.24 },
+    { renderScale: 0.7, particleMultiplier: 0.45, particleCap: 90, trailLength: 6, overdriveTrailLength: 10, shadowScale: 0.25, drawGrid: false, motionBlurAlpha: 0.16 },
+  ],
+  mobile: [
+    { renderScale: 0.7, particleMultiplier: 0.42, particleCap: 70, trailLength: 6, overdriveTrailLength: 10, shadowScale: 0.45, drawGrid: false, motionBlurAlpha: 0.18 },
+    { renderScale: 0.58, particleMultiplier: 0.28, particleCap: 45, trailLength: 4, overdriveTrailLength: 7, shadowScale: 0.2, drawGrid: false, motionBlurAlpha: 0.12 },
+    { renderScale: 0.48, particleMultiplier: 0.18, particleCap: 28, trailLength: 2, overdriveTrailLength: 4, shadowScale: 0, drawGrid: false, motionBlurAlpha: 0.08 },
+  ],
+};
+
+const applyQualityPreset = (perf, quality = perf.quality ?? 0) => {
+  const presets = perf.isMobile ? QUALITY_PRESETS.mobile : QUALITY_PRESETS.desktop;
+  const nextQuality = Math.max(0, Math.min(quality, presets.length - 1));
+  Object.assign(perf, presets[nextQuality], { quality: nextQuality });
+};
 
 // --- AUDIO SYSTEM (Synthesized Retro SFX) ---
 class AudioSys {
@@ -426,6 +445,7 @@ export default function App() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [showUnlocks, setShowUnlocks] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
   const isLocalMode = isLocalRuntime();
   
@@ -609,6 +629,14 @@ export default function App() {
     setIsSubmitting(false);
   };
 
+  const leaderboardRows = isLocalMode ? localScores : leaderboard;
+  const playerLookupName = playerName.trim().toLowerCase();
+  const playerLeaderboardIndex = leaderboardRows.findIndex((entry) => {
+    if (playerLookupName && String(entry.name || '').trim().toLowerCase() === playerLookupName) return true;
+    return isLocalMode && localHighScore > 0 && Number(entry.score) === localHighScore;
+  });
+  const playerLeaderboardEntry = playerLeaderboardIndex >= 0 ? leaderboardRows[playerLeaderboardIndex] : null;
+
   useEffect(() => {
     if (gameState === 'menu') {
         fetchLeaderboard();
@@ -623,29 +651,36 @@ export default function App() {
     const performance = isMobile
       ? {
           isMobile: true,
+          quality: 0,
+          frameAvg: FRAME_DURATION,
+          qualityCooldown: 0,
           coreFollow: 0.22,
           friction: 0.92,
           constraintIterations: 3,
-          renderScale: 0.8,
-          trailLength: 8,
-          overdriveTrailLength: 14,
-          particleMultiplier: 0.55,
-          particleCap: 90,
+          renderScale: 0.7,
+          trailLength: 6,
+          overdriveTrailLength: 10,
+          particleMultiplier: 0.42,
+          particleCap: 70,
           textCap: 12,
           pickupGlow: 6,
           enemyGlow: 6,
           ropeGlow: 6,
           maceGlowBase: 10,
           overdriveMaceGlow: 26,
+          shadowScale: 0.45,
           shakeDecay: 0.82,
           hitStopMultiplier: 0.5,
           drawGrid: false,
-          motionBlurAlpha: 0.2,
+          motionBlurAlpha: 0.18,
           gridAlpha: 0.12,
           hudSyncInterval: 12,
         }
       : {
           isMobile: false,
+          quality: 0,
+          frameAvg: FRAME_DURATION,
+          qualityCooldown: 0,
           coreFollow: 0.15,
           friction: 0.95,
           constraintIterations: 4,
@@ -660,6 +695,7 @@ export default function App() {
           ropeGlow: 10,
           maceGlowBase: 15,
           overdriveMaceGlow: 40,
+          shadowScale: 1,
           shakeDecay: 0.9,
           hitStopMultiplier: 1,
           drawGrid: true,
@@ -667,6 +703,7 @@ export default function App() {
           gridAlpha: 0.2,
           hudSyncInterval: 10,
         };
+    applyQualityPreset(performance, performance.quality);
     
     // Physics nodes for the chain-mace (Verlet integration)
     const nodes = Array.from({ length: NUM_NODES }, (_, i) => ({
@@ -743,7 +780,7 @@ export default function App() {
 
     const scenes = canvases.map(({ canvas, mode }) => {
       const nodes = Array.from({ length: NUM_NODES }, () => ({ x: 0, y: 0, oldX: 0, oldY: 0 }));
-      return { canvas, mode, nodes, trail: [], width: 0, height: 0 };
+      return { canvas, mode, nodes, trail: [], width: 0, height: 0, staticDrawn: false };
     });
 
     const resizeScene = (scene) => {
@@ -771,6 +808,7 @@ export default function App() {
         node.oldY = node.y;
       });
       scene.trail = [];
+      scene.staticDrawn = false;
     };
 
     const targetFor = (scene, time) => {
@@ -875,6 +913,9 @@ export default function App() {
 
     const drawScene = (scene, time) => {
       resizeScene(scene);
+      const isSmallPreview = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < MOBILE_BREAKPOINT;
+      if (scene.mode === 'menu' && isSmallPreview && scene.staticDrawn) return;
+
       const ctx = scene.canvas.getContext('2d');
       const w = scene.width;
       const h = scene.height;
@@ -975,6 +1016,7 @@ export default function App() {
         ctx.arc(core.x, core.y, 40 + Math.sin(time / 180) * 18, 0, Math.PI * 2);
         ctx.stroke();
       }
+      if (scene.mode === 'menu' && isSmallPreview) scene.staticDrawn = true;
     };
 
     const handlePreviewResize = () => scenes.forEach((scene) => { scene.width = 0; });
@@ -982,7 +1024,7 @@ export default function App() {
     let lastPreviewFrame = 0;
     const loop = (time) => {
       const isSmallPreview = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < MOBILE_BREAKPOINT;
-      const frameInterval = isSmallPreview ? 1000 / 18 : 1000 / 30;
+      const frameInterval = isSmallPreview ? 1000 / 12 : 1000 / 30;
       if (time - lastPreviewFrame < frameInterval) {
         frame = requestAnimationFrame(loop);
         return;
@@ -992,8 +1034,16 @@ export default function App() {
       frame = requestAnimationFrame(loop);
     };
 
-    frame = requestAnimationFrame(loop);
     window.addEventListener('resize', handlePreviewResize);
+
+    const isStaticMenuPreview = !showTutorial && (window.matchMedia('(pointer: coarse)').matches || window.innerWidth < MOBILE_BREAKPOINT);
+    if (isStaticMenuPreview) {
+      frame = requestAnimationFrame((time) => {
+        scenes.forEach((scene) => drawScene(scene, time));
+      });
+    } else {
+      frame = requestAnimationFrame(loop);
+    }
 
     return () => {
       cancelAnimationFrame(frame);
@@ -1009,18 +1059,43 @@ export default function App() {
     const ctx = canvas.getContext('2d', { alpha: false });
     let s = stateRef.current;
     const perf = s.performance;
+    let appliedRenderScale = perf.renderScale ?? 1;
 
     // Handle Window Resize
-    const handleResize = () => {
+    const resizeCanvas = () => {
       s.width = window.innerWidth;
       s.height = window.innerHeight;
       const renderScale = perf.renderScale ?? 1;
+      appliedRenderScale = renderScale;
       canvas.width = Math.floor(s.width * renderScale);
       canvas.height = Math.floor(s.height * renderScale);
       ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
     };
+    const handleResize = () => resizeCanvas();
     window.addEventListener('resize', handleResize);
-    handleResize();
+    resizeCanvas();
+
+    const updateQuality = (deltaMs) => {
+      if (!Number.isFinite(deltaMs) || deltaMs <= 0) return;
+      perf.frameAvg = perf.frameAvg * 0.94 + deltaMs * 0.06;
+      if (perf.qualityCooldown > 0) perf.qualityCooldown--;
+
+      const downThreshold = perf.isMobile ? 24 : 30;
+      const upThreshold = perf.isMobile ? 17 : 19;
+      const presets = perf.isMobile ? QUALITY_PRESETS.mobile : QUALITY_PRESETS.desktop;
+
+      if (perf.qualityCooldown <= 0 && perf.frameAvg > downThreshold && perf.quality < presets.length - 1) {
+        applyQualityPreset(perf, perf.quality + 1);
+        perf.qualityCooldown = 90;
+        resizeCanvas();
+      } else if (perf.qualityCooldown <= 0 && perf.frameAvg < upThreshold && perf.quality > 0) {
+        applyQualityPreset(perf, perf.quality - 1);
+        perf.qualityCooldown = 180;
+        resizeCanvas();
+      } else if (Math.abs((perf.renderScale ?? 1) - appliedRenderScale) > 0.01) {
+        resizeCanvas();
+      }
+    };
 
     // Handle Input Tracking
     const handlePointerMove = (e) => {
@@ -1107,7 +1182,9 @@ export default function App() {
 
     const spawnParticles = (x, y, color, count, speedFactor = 1) => {
       const particleCount = Math.max(1, Math.floor(count * perf.particleMultiplier));
+      const skipHeavyParticles = perf.quality >= 2;
       for (let i = 0; i < particleCount; i++) {
+        if (skipHeavyParticles && i % 2 === 1) continue;
         const angle = Math.random() * Math.PI * 2;
         const speed = Math.random() * 5 * speedFactor;
         s.particles.push({
@@ -1672,7 +1749,7 @@ export default function App() {
           ctx.shadowColor = '#0ff';
         }
         
-        ctx.shadowBlur = perf.pickupGlow;
+        ctx.shadowBlur = perf.pickupGlow * perf.shadowScale;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.type === 'energy' || !p.type ? 4 : 7, 0, Math.PI * 2);
         ctx.fill();
@@ -1722,7 +1799,7 @@ export default function App() {
 
       // Draw Enemies
       s.enemies.forEach(e => {
-        ctx.shadowBlur = e.hitFlash > 0 ? perf.enemyGlow * 2 : perf.enemyGlow;
+        ctx.shadowBlur = (e.hitFlash > 0 ? perf.enemyGlow * 2 : perf.enemyGlow) * perf.shadowScale;
         const frozen = s.freezeTimer > 0;
         ctx.shadowColor = e.hitFlash > 0 ? '#fff' : frozen ? '#93c5fd' : e.color;
         ctx.fillStyle = e.hitFlash > 0 ? '#fff' : frozen ? '#bfdbfe' : e.color;
@@ -1762,14 +1839,14 @@ export default function App() {
       s.particles.forEach(p => {
         ctx.fillStyle = p.color;
         ctx.globalAlpha = p.life;
-        ctx.shadowBlur = 5;
+        ctx.shadowBlur = perf.quality >= 1 ? 0 : 5 * perf.shadowScale;
         ctx.shadowColor = p.color;
         ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
       });
       ctx.globalAlpha = 1.0;
 
       // Draw Player Chain (Rope)
-      ctx.shadowBlur = s.isOverdrive ? perf.ropeGlow * 2 : perf.ropeGlow;
+      ctx.shadowBlur = (s.isOverdrive ? perf.ropeGlow * 2 : perf.ropeGlow) * perf.shadowScale;
       ctx.shadowColor = s.isOverdrive ? '#fff' : skin.rope;
       ctx.strokeStyle = s.isOverdrive ? '#fff' : skin.rope;
       ctx.lineWidth = s.isOverdrive ? 6 : 3;
@@ -1784,7 +1861,7 @@ export default function App() {
       if (s.invulnTimer % 10 < 5) { // Blink if invulnerable
         const core = s.nodes[0];
         ctx.fillStyle = skin.core;
-        ctx.shadowBlur = perf.ropeGlow * 2;
+        ctx.shadowBlur = perf.ropeGlow * 2 * perf.shadowScale;
         ctx.beginPath();
         ctx.arc(core.x, core.y, CORE_RADIUS, 0, Math.PI * 2);
         ctx.fill();
@@ -1796,7 +1873,7 @@ export default function App() {
         if (s.shieldTimer > 0) {
           ctx.strokeStyle = '#38bdf8';
           ctx.shadowColor = '#38bdf8';
-          ctx.shadowBlur = 18;
+          ctx.shadowBlur = 18 * perf.shadowScale;
           ctx.lineWidth = 3;
           ctx.beginPath();
           ctx.arc(core.x, core.y, CORE_RADIUS + 9 + Math.sin(s.frames * 0.18) * 2, 0, Math.PI * 2);
@@ -1810,7 +1887,7 @@ export default function App() {
       const activeMaceRadius = s.isOverdrive ? MACE_RADIUS * 2.5 : (s.giantMaceTimer > 0 ? MACE_RADIUS * 2.0 : MACE_RADIUS);
       
       // Mace Tail
-      if (s.maceHistory.length > 1) {
+      if (s.maceHistory.length > 1 && perf.trailLength > 0) {
         ctx.beginPath();
         ctx.moveTo(s.maceHistory[0].x, s.maceHistory[0].y);
         for (let i = 1; i < s.maceHistory.length; i++) {
@@ -1839,7 +1916,7 @@ export default function App() {
       }
 
       // Mace Head
-      ctx.shadowBlur = s.isOverdrive ? perf.overdriveMaceGlow : perf.maceGlowBase + maceSpeed * (perf.isMobile ? 0.55 : 1);
+      ctx.shadowBlur = (s.isOverdrive ? perf.overdriveMaceGlow : perf.maceGlowBase + maceSpeed * (perf.isMobile ? 0.55 : 1)) * perf.shadowScale;
       
       if (s.isOverdrive) {
         ctx.shadowColor = '#fff';
@@ -1896,11 +1973,16 @@ export default function App() {
       }
 
       draw();
+      updateQuality(deltaMs);
       reqRef.current = requestAnimationFrame(mobileLoop);
     };
-    const desktopLoop = () => {
+    let lastDesktopTime = window.performance.now();
+    const desktopLoop = (time) => {
+      const deltaMs = Math.min(50, time - lastDesktopTime || FRAME_DURATION);
+      lastDesktopTime = time;
       update();
       draw();
+      updateQuality(deltaMs);
       reqRef.current = requestAnimationFrame(desktopLoop);
     };
     reqRef.current = requestAnimationFrame(perf.isMobile ? mobileLoop : desktopLoop);
@@ -2096,6 +2178,57 @@ export default function App() {
         </div>
       )}
 
+      {showLeaderboard && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/85 p-4 backdrop-blur-md">
+          <div className="max-h-[86vh] w-full max-w-3xl overflow-hidden rounded-lg border border-yellow-300/30 bg-gray-900 shadow-[0_0_45px_rgba(250,204,21,0.13)]">
+            <div className="flex items-center justify-between gap-4 border-b border-gray-800 p-5">
+              <div className="flex items-center gap-2 text-yellow-200">
+                <Trophy size={20} />
+                <div>
+                  <h2 className="text-2xl font-black tracking-widest">{isLocalMode ? 'LOCAL LEADERBOARD' : 'LEADERBOARD'}</h2>
+                  <div className="mt-1 text-xs font-bold uppercase tracking-widest text-gray-500">
+                    {playerLeaderboardEntry
+                      ? `You are #${playerLeaderboardIndex + 1} with ${Number(playerLeaderboardEntry.score).toLocaleString()}`
+                      : 'Play a run to place yourself'}
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setShowLeaderboard(false)} className="rounded border border-gray-700 bg-gray-950 px-3 py-2 text-xs font-bold uppercase tracking-widest text-gray-300 transition-colors hover:border-yellow-300 hover:text-yellow-100">
+                Close
+              </button>
+            </div>
+
+            <div className="max-h-[68vh] overflow-y-auto p-4">
+              {leaderboardRows.length > 0 ? (
+                <div className="space-y-2">
+                  {leaderboardRows.map((entry, index) => {
+                    const isPlayer = index === playerLeaderboardIndex;
+                    return (
+                      <div
+                        key={`${entry.name}-${entry.score}-${index}`}
+                        className={`grid grid-cols-[44px_1fr_auto] items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+                          isPlayer
+                            ? 'border-cyan-300/60 bg-cyan-950/40 text-cyan-50'
+                            : 'border-gray-800 bg-gray-950/55 text-gray-200'
+                        }`}
+                      >
+                        <span className={`font-black ${index < 3 ? 'text-yellow-200' : 'text-gray-500'}`}>#{index + 1}</span>
+                        <span className="min-w-0 truncate font-bold">{entry.name || 'LOCAL'}</span>
+                        <span className="font-mono text-cyan-300">{Number(entry.score).toLocaleString()}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-gray-800 bg-gray-950/55 px-4 py-10 text-center text-sm text-gray-500">
+                  No scores yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showTutorial && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/90 p-4 backdrop-blur-md">
           <div className="grid max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-cyan-400/30 bg-gray-900 shadow-[0_0_55px_rgba(34,211,238,0.18)] md:grid-cols-[1.35fr_0.9fr]">
@@ -2232,18 +2365,26 @@ export default function App() {
                   {isLocalMode ? 'Local Board' : 'Leaderboard'}
                 </div>
                 <div className="space-y-1.5">
-                  {(isLocalMode ? localScores : leaderboard).slice(0, 3).map((entry, index) => (
+                  {leaderboardRows.slice(0, 3).map((entry, index) => (
                     <div key={`${entry.name}-${entry.score}-${index}`} className="flex items-center gap-2 rounded border border-gray-800/80 bg-gray-900/70 px-2 py-1.5 text-xs">
                       <span className="w-5 text-gray-500">{index + 1}.</span>
                       <span className="min-w-0 flex-1 truncate font-bold text-gray-100">{entry.name || 'LOCAL'}</span>
                       <span className="font-mono text-cyan-300">{Number(entry.score).toLocaleString()}</span>
                     </div>
                   ))}
-                  {(isLocalMode ? localScores : leaderboard).length === 0 && (
+                  {leaderboardRows.length === 0 && (
                     <div className="rounded border border-gray-800/80 bg-gray-900/70 px-2 py-3 text-center text-xs text-gray-500">
                       No runs yet
                     </div>
                   )}
+                </div>
+                <div className="mt-2 border-t border-gray-800 pt-2">
+                  <button
+                    onClick={() => setShowLeaderboard(true)}
+                    className="w-full rounded border border-yellow-300/30 bg-yellow-950/30 px-2 py-1.5 text-xs font-black uppercase tracking-widest text-yellow-100 transition-colors hover:bg-yellow-900/40"
+                  >
+                    {playerLeaderboardEntry ? `You: #${playerLeaderboardIndex + 1}` : 'View all'}
+                  </button>
                 </div>
               </div>
               <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-end justify-between gap-3">
@@ -2276,8 +2417,8 @@ export default function App() {
                 <button onClick={() => setShowUnlocks(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-yellow-300 hover:text-yellow-100">
                   Unlocks
                 </button>
-                <button onClick={() => setShowBadges(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-cyan-400 hover:text-cyan-200">
-                  Badges
+                <button onClick={() => setShowLeaderboard(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-yellow-300 hover:text-yellow-100">
+                  Board
                 </button>
               </div>
             </div>
