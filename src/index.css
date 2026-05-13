@@ -427,3 +427,19 @@ canvas {
   0%, 100% { transform: translate3d(88px, 40px, 0) scale(1.4); background: #ccffff; box-shadow: 0 0 42px #fff; }
   50% { transform: translate3d(-90px, -55px, 0) scale(2.1); background: #fff; box-shadow: 0 0 72px #fff; }
 }
+
+@media (max-width: 767px), (pointer: coarse) {
+  .menu-grid,
+  .menu-spark,
+  .menu-start-button {
+    animation: none;
+  }
+
+  .menu-grid {
+    opacity: 0.35;
+  }
+
+  .menu-spark {
+    display: none;
+  }
+}

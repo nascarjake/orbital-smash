@@ -14,6 +14,7 @@ const HIGH_SCORE_KEY = 'orbital_smash_high_score';
 const ACHIEVEMENTS_KEY = 'orbital_smash_achievements';
 const UNLOCKS_KEY = 'orbital_smash_unlocks';
 const LOADOUT_KEY = 'orbital_smash_loadout';
+const LOCAL_SCORES_KEY = 'orbital_smash_local_scores';
 const MUTE_KEY = 'orbital_smash_muted';
 
 const DREAMLO_PUBLIC = "69f664cb8f40bb1068bd441a";
@@ -222,6 +223,16 @@ const readStoredJson = (key, fallback) => {
   }
 };
 
+const normalizeLocalScores = (scores) => (
+  Array.isArray(scores)
+    ? scores
+        .map((entry) => ({ ...entry, score: Number(entry.score) || 0 }))
+        .filter((entry) => entry.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10)
+    : []
+);
+
 // --- AUDIO SYSTEM (Synthesized Retro SFX) ---
 class AudioSys {
   constructor() {
@@ -401,6 +412,7 @@ export default function App() {
   const [health, setHealth] = useState(3);
   const [energy, setEnergy] = useState(0);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [localScores, setLocalScores] = useState(() => normalizeLocalScores(readStoredJson(LOCAL_SCORES_KEY, [])));
   const [playerName, setPlayerName] = useState(() => localStorage.getItem('orbital_smash_name') || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem(MUTE_KEY) === 'true');
@@ -429,6 +441,23 @@ export default function App() {
     window.setTimeout(() => {
       setCelebrations((items) => items.filter((item) => item.id !== id));
     }, 3400);
+  };
+
+  const recordLocalScore = (finalScore) => {
+    if (finalScore <= 0) return;
+
+    setLocalScores((current) => {
+      const next = normalizeLocalScores([
+        ...current,
+        {
+          name: playerName.trim() || 'LOCAL',
+          score: finalScore,
+          date: Date.now(),
+        },
+      ]);
+      localStorage.setItem(LOCAL_SCORES_KEY, JSON.stringify(next));
+      return next;
+    });
   };
 
   const unlockAchievement = (id) => {
@@ -719,9 +748,10 @@ export default function App() {
 
     const resizeScene = (scene) => {
       const rect = scene.canvas.getBoundingClientRect();
-      const ratio = window.devicePixelRatio || 1;
-      const width = Math.max(320, rect.width);
-      const height = Math.max(240, rect.height);
+      const isSmallPreview = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < MOBILE_BREAKPOINT;
+      const ratio = Math.min(window.devicePixelRatio || 1, isSmallPreview ? 1 : 1.5);
+      const width = Math.max(280, rect.width);
+      const height = Math.max(180, rect.height);
 
       if (scene.width === width && scene.height === height) return;
 
@@ -949,7 +979,15 @@ export default function App() {
 
     const handlePreviewResize = () => scenes.forEach((scene) => { scene.width = 0; });
     let frame = 0;
+    let lastPreviewFrame = 0;
     const loop = (time) => {
+      const isSmallPreview = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < MOBILE_BREAKPOINT;
+      const frameInterval = isSmallPreview ? 1000 / 18 : 1000 / 30;
+      if (time - lastPreviewFrame < frameInterval) {
+        frame = requestAnimationFrame(loop);
+        return;
+      }
+      lastPreviewFrame = time;
       scenes.forEach((scene) => drawScene(scene, time));
       frame = requestAnimationFrame(loop);
     };
@@ -1510,6 +1548,7 @@ export default function App() {
               continue;
             }
 
+            recordLocalScore(s.score);
             const storedHighScore = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
             if (s.score > storedHighScore) {
               localStorage.setItem(HIGH_SCORE_KEY, String(s.score));
@@ -2187,6 +2226,26 @@ export default function App() {
 
             <div className="relative min-h-0 overflow-hidden rounded-lg border border-gray-800 bg-gray-950/70">
               <canvas ref={menuDemoCanvasRef} className="absolute inset-0 h-full w-full" />
+              <div className="absolute right-3 top-3 w-52 rounded-lg border border-gray-700/80 bg-gray-950/80 p-3 shadow-[0_0_20px_rgba(0,0,0,0.35)] backdrop-blur-sm">
+                <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-yellow-200">
+                  <Trophy size={14} />
+                  {isLocalMode ? 'Local Board' : 'Leaderboard'}
+                </div>
+                <div className="space-y-1.5">
+                  {(isLocalMode ? localScores : leaderboard).slice(0, 3).map((entry, index) => (
+                    <div key={`${entry.name}-${entry.score}-${index}`} className="flex items-center gap-2 rounded border border-gray-800/80 bg-gray-900/70 px-2 py-1.5 text-xs">
+                      <span className="w-5 text-gray-500">{index + 1}.</span>
+                      <span className="min-w-0 flex-1 truncate font-bold text-gray-100">{entry.name || 'LOCAL'}</span>
+                      <span className="font-mono text-cyan-300">{Number(entry.score).toLocaleString()}</span>
+                    </div>
+                  ))}
+                  {(isLocalMode ? localScores : leaderboard).length === 0 && (
+                    <div className="rounded border border-gray-800/80 bg-gray-900/70 px-2 py-3 text-center text-xs text-gray-500">
+                      No runs yet
+                    </div>
+                  )}
+                </div>
+              </div>
               <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-end justify-between gap-3">
                 <div className="max-w-md text-lg font-bold text-cyan-50 md:text-2xl">
                   Swing the chain. Build speed. Smash the swarm.
