@@ -1708,6 +1708,35 @@ export default function App() {
                 <p className="text-lg leading-relaxed text-center text-cyan-50">
                 You are the weapon. Swing your mouse to build momentum and obliterate the swarm.
                 </p>
+
+                <div className="rounded-lg border border-cyan-400/20 bg-cyan-950/20 p-4">
+                  <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-cyan-200">
+                    <Play size={14} fill="currentColor" />
+                    Quick Tutorial
+                  </div>
+                  <div className="grid gap-2 text-sm text-gray-300">
+                    <div className="flex gap-3">
+                      <span className="font-black text-cyan-300">1</span>
+                      <span>Move your mouse or finger to drag the glowing core.</span>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="font-black text-cyan-300">2</span>
+                      <span>The mace follows on a chain. Swing wide circles to build speed.</span>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="font-black text-cyan-300">3</span>
+                      <span>Hit enemies with a fast mace. Slow taps mostly shove them away.</span>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="font-black text-cyan-300">4</span>
+                      <span>Keep smashing quickly to grow your combo and score multiplier.</span>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="font-black text-cyan-300">5</span>
+                      <span>Protect the core. Three hits ends the run unless a shield saves you.</span>
+                    </div>
+                  </div>
+                </div>
                 
                 <div className="grid grid-cols-1 gap-4 text-sm bg-gray-950/60 p-4 rounded-lg border border-gray-800">
                 <div className="flex items-center gap-3">
@@ -1726,6 +1755,18 @@ export default function App() {
                     <div className="px-3 py-1 bg-gray-800 rounded border border-gray-600 font-bold">CLICK</div>
                     <span className="text-white font-bold tracking-widest text-xs">Activate Overdrive (100% Energy)</span>
                 </div>
+                </div>
+
+                <div className="rounded-lg border border-yellow-300/20 bg-yellow-950/15 p-4">
+                  <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-yellow-200">
+                    <Zap size={14} fill="currentColor" />
+                    How Overdrive Works
+                  </div>
+                  <div className="space-y-2 text-sm leading-relaxed text-gray-300">
+                    <p>Collect cyan energy orbs until the Overdrive meter reaches 100%.</p>
+                    <p>When it is full, press or hold click/touch to spend the whole meter and enter Overdrive for about five seconds.</p>
+                    <p>During Overdrive, the mace becomes huge, enemies are always vulnerable, pickups pull in harder, and the arena shakes while you carve through the swarm.</p>
+                  </div>
                 </div>
 
                 <button
