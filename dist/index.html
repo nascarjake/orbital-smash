@@ -1,6 +1,12 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      if (location.protocol === 'file:' && !location.pathname.includes('/dist/')) {
+        location.replace('./dist/index.html');
+      }
+    </script>
+
     <!-- Google tag (gtag.js), disabled for local file and localhost runs -->
     <script>
       const isLocalRuntime = location.protocol === 'file:' || ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
@@ -22,8 +28,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ORBITAL SMASH</title>
     <meta name="description" content="Swing your way to victory in this high-octane orbital combat game." />
-    <script type="module" crossorigin src="./assets/index-BTABf04f.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-DSTiJA3_.css">
+    <script type="module" crossorigin src="./assets/index-P0hbAlr0.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BMZH8U_0.css">
   </head>
   <body>
     <div id="root"></div>

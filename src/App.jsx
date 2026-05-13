@@ -17,6 +17,11 @@ const MUTE_KEY = 'orbital_smash_muted';
 const DREAMLO_PUBLIC = "69f664cb8f40bb1068bd441a";
 const DREAMLO_PRIVATE = "qJcEBUUmAE6ApG2ZQjVRiw4nBSAtJFnUGNixUKRstFdA";
 
+const isLocalRuntime = () => {
+  const { hostname, protocol } = window.location;
+  return protocol === 'file:' || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+};
+
 const buildDreamloUrl = (path) => `http://dreamlo.com/lb/${path}`;
 const buildProxyUrls = (url) => [
   `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
@@ -91,6 +96,23 @@ const ACHIEVEMENTS = [
   { id: 'bomb_squad', title: 'Chain Reaction', desc: 'Detonate 3 bombs.', test: (s) => s.bombs >= 3 },
   { id: 'deep_freeze', title: 'Deep Freeze', desc: 'Collect 3 freeze cores.', test: (s) => s.freezes >= 3 },
   { id: 'local_legend', title: 'Local Legend', desc: 'Set a local high score.', test: (s) => s.didSetHighScore },
+];
+
+const ENEMY_KEY = [
+  { name: 'Basic', detail: 'Standard diamond. Good combo fuel.', color: '#ff00ff', shape: 'diamond' },
+  { name: 'Fast', detail: 'Yellow striker. Quick and fragile.', color: '#facc15', shape: 'triangle' },
+  { name: 'Tank', detail: 'Green block. Takes three solid hits.', color: '#22c55e', shape: 'square' },
+  { name: 'Splitter', detail: 'Purple core. Pops into two fast shards.', color: '#a855f7', shape: 'circle' },
+];
+
+const POWERUP_KEY = [
+  { name: 'Energy', detail: 'Charges Overdrive.', color: '#22d3ee', icon: Zap },
+  { name: 'Health', detail: 'Restores one shield.', color: '#22c55e', icon: Shield },
+  { name: 'Giant', detail: 'Doubles mace size for 10s.', color: '#fb923c', icon: Trophy },
+  { name: 'Freeze', detail: 'Slows the swarm for 5s.', color: '#93c5fd', icon: Snowflake },
+  { name: 'Magnet', detail: 'Pulls drops from farther away.', color: '#22d3ee', icon: Magnet },
+  { name: 'Bomb', detail: 'Blasts nearby enemies.', color: '#fb7185', icon: Bomb },
+  { name: 'Shield', detail: 'Blocks one core hit.', color: '#38bdf8', icon: Shield },
 ];
 
 const readStoredJson = (key, fallback) => {
@@ -273,6 +295,7 @@ export default function App() {
   const [achievements, setAchievements] = useState(() => readStoredJson(ACHIEVEMENTS_KEY, {}));
   const [celebrations, setCelebrations] = useState([]);
   const [activeEffects, setActiveEffects] = useState([]);
+  const isLocalMode = isLocalRuntime();
   
   const canvasRef = useRef(null);
   const reqRef = useRef(null);
@@ -333,6 +356,11 @@ export default function App() {
   };
 
   const fetchLeaderboard = async () => {
+    if (isLocalMode) {
+      setLeaderboard([]);
+      return;
+    }
+
     try {
       const data = await requestDreamlo(`${DREAMLO_PUBLIC}/json`);
       setLeaderboard(normalizeLeaderboardEntries(data));
@@ -343,6 +371,12 @@ export default function App() {
     if (!playerName.trim() || isSubmitting) return;
     setIsSubmitting(true);
     localStorage.setItem('orbital_smash_name', playerName);
+    if (isLocalMode) {
+      setGameState('menu');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       await requestDreamlo(
         `${DREAMLO_PRIVATE}/add/${encodeURIComponent(playerName.trim())}/${score}`,
@@ -1356,22 +1390,30 @@ export default function App() {
 
       {/* --- MENU UI --- */}
       {gameState === 'menu' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/80 backdrop-blur-sm z-20 p-4 overflow-y-auto">
-          <div className="relative group mb-8">
-            <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-purple-600 rounded-lg blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-pulse"></div>
-            <h1 className="relative text-5xl md:text-7xl font-black italic tracking-tighter text-white drop-shadow-2xl px-8 py-4 bg-gray-900 rounded-lg text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/85 backdrop-blur-sm z-20 p-4 overflow-y-auto">
+          <div className="pointer-events-none absolute inset-0 menu-grid opacity-70" />
+          <div className="pointer-events-none absolute left-[8%] top-[18%] h-2 w-2 rounded-full bg-cyan-300 menu-spark" />
+          <div className="pointer-events-none absolute right-[14%] top-[24%] h-2 w-2 rounded-full bg-fuchsia-300 menu-spark menu-spark-delay" />
+          <div className="pointer-events-none absolute bottom-[14%] left-[20%] h-1.5 w-1.5 rounded-full bg-yellow-200 menu-spark menu-spark-slow" />
+
+          <div className="relative group mb-6 text-center">
+            <div className="absolute -inset-2 bg-gradient-to-r from-cyan-500 via-fuchsia-500 to-yellow-300 rounded-lg blur opacity-80 menu-title-glow"></div>
+            <h1 className="relative text-5xl md:text-7xl font-black italic tracking-tighter text-white drop-shadow-2xl px-8 py-4 bg-gray-900/95 rounded-lg border border-white/10">
               ORBITAL SMASH
             </h1>
+            <div className="relative mt-3 text-xs font-bold uppercase tracking-[0.36em] text-cyan-200/80">
+              Swing hard. Chain combos. Become the hazard.
+            </div>
           </div>
           
-          <div className="flex flex-col md:flex-row gap-8 w-full max-w-5xl items-stretch">
+          <div className="relative flex flex-col xl:flex-row gap-5 w-full max-w-7xl items-stretch">
             {/* Left Column: Instructions */}
-            <div className="flex-1 space-y-6 text-gray-300 bg-gray-900/50 p-6 rounded-2xl border border-gray-800">
-                <p className="text-lg leading-relaxed text-center">
+            <div className="flex-1 space-y-5 text-gray-300 bg-gray-900/60 p-6 rounded-lg border border-cyan-400/20 shadow-[0_0_35px_rgba(34,211,238,0.08)] menu-panel">
+                <p className="text-lg leading-relaxed text-center text-cyan-50">
                 You are the weapon. Swing your mouse to build momentum and obliterate the swarm.
                 </p>
                 
-                <div className="grid grid-cols-1 gap-4 text-sm bg-gray-950/50 p-4 rounded-xl">
+                <div className="grid grid-cols-1 gap-4 text-sm bg-gray-950/60 p-4 rounded-lg border border-gray-800">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-gray-800 rounded text-cyan-400"><Trophy size={16}/></div>
                     <span>Fast Swings = More Damage</span>
@@ -1390,20 +1432,77 @@ export default function App() {
                 </div>
                 </div>
 
-                <button 
+                <button
                 onClick={startGame}
-                className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-cyan-600 text-xl rounded-xl hover:bg-cyan-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-600 w-full"
+                className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-cyan-600 text-xl rounded-lg hover:bg-cyan-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-600 w-full overflow-hidden shadow-[0_0_30px_rgba(34,211,238,0.25)] menu-start-button"
                 >
+                <div className="absolute inset-0 bg-white/20 group-hover:translate-x-full -translate-x-full transition-transform duration-500 ease-out skew-x-12"></div>
                 <Play className="mr-2" size={24} fill="currentColor" />
                 INITIATE NEON CORE
                 </button>
             </div>
 
+            {/* Middle Column: Combat Key */}
+            <div className="flex-[1.35] bg-gray-900/60 p-6 rounded-lg border border-fuchsia-400/20 shadow-[0_0_35px_rgba(217,70,239,0.08)] menu-panel menu-panel-delayed">
+              <div className="mb-4 flex items-center gap-2 border-b border-gray-800 pb-2 text-fuchsia-200">
+                <Zap size={18} />
+                <h2 className="text-xl font-bold tracking-widest">COMBAT KEY</h2>
+              </div>
+
+              <div className="grid gap-5 lg:grid-cols-2">
+                <div>
+                  <div className="mb-3 text-xs font-bold uppercase tracking-widest text-gray-500">Enemies</div>
+                  <div className="space-y-2">
+                    {ENEMY_KEY.map((item) => (
+                      <div key={item.name} className="flex items-center gap-3 rounded-lg border border-gray-800/80 bg-gray-950/55 p-3 transition-colors hover:border-fuchsia-300/40">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-gray-900">
+                          <div
+                            className="h-5 w-5 shadow-[0_0_12px_currentColor]"
+                            style={{
+                              color: item.color,
+                              backgroundColor: item.color,
+                              borderRadius: item.shape === 'circle' ? '999px' : item.shape === 'square' ? '2px' : '3px',
+                              clipPath: item.shape === 'triangle' ? 'polygon(50% 0, 100% 86%, 0 86%)' : undefined,
+                              transform: item.shape === 'diamond' ? 'rotate(45deg)' : undefined,
+                            }}
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-black text-white">{item.name}</div>
+                          <div className="text-xs leading-snug text-gray-400">{item.detail}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-3 text-xs font-bold uppercase tracking-widest text-gray-500">Powerups</div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                    {POWERUP_KEY.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <div key={item.name} className="flex items-center gap-3 rounded-lg border border-gray-800/80 bg-gray-950/55 p-3 transition-colors hover:border-cyan-300/40">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-gray-900" style={{ color: item.color }}>
+                            <Icon size={18} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-black text-white">{item.name}</div>
+                            <div className="text-xs leading-snug text-gray-400">{item.detail}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Right Column: Leaderboard */}
-            <div className="w-full md:w-80 bg-gray-900/50 p-6 rounded-2xl border border-gray-800 flex flex-col">
+            <div className="w-full xl:w-80 bg-gray-900/60 p-6 rounded-lg border border-yellow-400/20 flex flex-col shadow-[0_0_35px_rgba(250,204,21,0.07)] menu-panel menu-panel-late">
                 <div className="flex items-center gap-2 mb-4 text-cyan-400 border-b border-gray-800 pb-2">
                     <Trophy size={20}/>
-                    <h2 className="text-xl font-bold tracking-widest">HALL OF FAME</h2>
+                    <h2 className="text-xl font-bold tracking-widest">{isLocalMode ? 'LOCAL PROGRESS' : 'HALL OF FAME'}</h2>
                 </div>
                 <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded-lg border border-gray-800 bg-gray-950/50 p-3">
@@ -1415,6 +1514,7 @@ export default function App() {
                     <div className="text-lg font-black text-cyan-300">{Object.keys(achievements).length}/{ACHIEVEMENTS.length}</div>
                   </div>
                 </div>
+                {!isLocalMode && (
                 <div className="flex-1 space-y-2 overflow-y-auto max-h-64 pr-2">
                     {leaderboard.length > 0 ? leaderboard.map((entry, i) => (
                         <div key={i} className="flex justify-between items-center text-sm bg-gray-950/50 p-2 rounded border border-gray-800/50">
@@ -1428,6 +1528,7 @@ export default function App() {
                         </div>
                     )}
                 </div>
+                )}
                 <div className="mt-4 border-t border-gray-800 pt-3">
                   <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-500">
                     <Award size={14} />
@@ -1444,7 +1545,7 @@ export default function App() {
             </div>
           </div>
           
-          <p className="text-xs text-gray-500 mt-8 uppercase tracking-widest">Audio Required for Maximum Impact</p>
+          <p className="relative text-xs text-gray-500 mt-6 uppercase tracking-widest">Audio Required for Maximum Impact</p>
         </div>
       )}
 
@@ -1466,17 +1567,18 @@ export default function App() {
             </div>
           </div>
 
+          {!isLocalMode && (
           <div className="w-full max-w-sm bg-gray-900/80 p-6 rounded-2xl border border-red-900/50 shadow-2xl mb-8">
             <label className="block text-xs text-gray-400 uppercase tracking-widest mb-2 font-bold">Transmit Identity</label>
             <div className="flex gap-2">
-                <input 
-                    type="text" 
+                <input
+                    type="text"
                     value={playerName}
                     onChange={(e) => setPlayerName(e.target.value.toUpperCase().slice(0, 12))}
                     placeholder="PLAYER NAME"
                     className="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-4 py-3 text-cyan-400 focus:outline-none focus:border-cyan-500 font-bold placeholder:text-gray-800"
                 />
-                <button 
+                <button
                     onClick={submitScore}
                     disabled={!playerName.trim() || isSubmitting}
                     className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-800 px-4 rounded-lg transition-colors"
@@ -1485,8 +1587,9 @@ export default function App() {
                 </button>
             </div>
           </div>
+          )}
           
-          <button 
+          <button
             onClick={startGame}
             className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-red-600 text-xl rounded-xl hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-600 overflow-hidden shadow-[0_0_30px_rgba(220,38,38,0.5)]"
           >

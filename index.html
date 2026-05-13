@@ -1,18 +1,30 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CCYN6RV8HK"></script>
     <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
+      if (location.protocol === 'file:' && !location.pathname.includes('/dist/')) {
+        location.replace('./dist/index.html');
+      }
+    </script>
 
-      gtag('config', 'G-CCYN6RV8HK');
+    <!-- Google tag (gtag.js), disabled for local file and localhost runs -->
+    <script>
+      const isLocalRuntime = location.protocol === 'file:' || ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+      if (!isLocalRuntime) {
+        const gtagScript = document.createElement('script');
+        gtagScript.async = true;
+        gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-CCYN6RV8HK';
+        document.head.appendChild(gtagScript);
+
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-CCYN6RV8HK');
+      }
     </script>
 
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="./vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ORBITAL SMASH</title>
     <meta name="description" content="Swing your way to victory in this high-octane orbital combat game." />
