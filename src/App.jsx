@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Award, Bomb, Magnet, Play, RotateCcw, Shield, Snowflake, Trophy, Volume2, VolumeX, Zap } from 'lucide-react';
+import { Award, Bomb, Eye, Home, Magnet, Music, Palette, Play, RotateCcw, Send, Shield, Snowflake, Sparkles, Trophy, Volume2, VolumeX, Zap } from 'lucide-react';
 
 // --- GAME CONSTANTS ---
 const NUM_NODES = 7;           // Number of segments in the chain
@@ -12,6 +12,8 @@ const MOBILE_BREAKPOINT = 768;
 const FRAME_DURATION = 1000 / 60;
 const HIGH_SCORE_KEY = 'orbital_smash_high_score';
 const ACHIEVEMENTS_KEY = 'orbital_smash_achievements';
+const UNLOCKS_KEY = 'orbital_smash_unlocks';
+const LOADOUT_KEY = 'orbital_smash_loadout';
 const MUTE_KEY = 'orbital_smash_muted';
 
 const DREAMLO_PUBLIC = "69f664cb8f40bb1068bd441a";
@@ -115,6 +117,75 @@ const POWERUP_KEY = [
   { name: 'Shield', detail: 'Blocks one core hit.', color: '#38bdf8', icon: Shield },
 ];
 
+const UNLOCKABLES = [
+  {
+    id: 'skin_sunforge',
+    type: 'skin',
+    title: 'Sunforge Core',
+    desc: 'Turns the core and mace gold-hot.',
+    requirement: 'Score 750',
+    test: (s) => s.highScore >= 750,
+  },
+  {
+    id: 'skin_void',
+    type: 'skin',
+    title: 'Void Core',
+    desc: 'A violet core with a colder trail.',
+    requirement: 'Unlock 4 badges',
+    test: (s) => s.badges >= 4,
+  },
+  {
+    id: 'bg_aurora',
+    type: 'background',
+    title: 'Aurora Grid',
+    desc: 'Adds a richer cyan/fuchsia arena wash.',
+    requirement: 'Reach wave 3',
+    test: (s) => s.hasAchievement('wave_3'),
+  },
+  {
+    id: 'sound_glass',
+    type: 'sound',
+    title: 'Glass Synth',
+    desc: 'Brighter, cleaner arcade tones.',
+    requirement: 'Trigger Overdrive',
+    test: (s) => s.hasAchievement('overdrive'),
+  },
+  {
+    id: 'power_chain',
+    type: 'powerup',
+    title: 'Chain Lightning',
+    desc: 'Rare drop that jumps through the nearest enemies.',
+    requirement: 'Score 1,000',
+    test: (s) => s.hasAchievement('score_1000'),
+  },
+  {
+    id: 'power_singularity',
+    type: 'powerup',
+    title: 'Singularity',
+    desc: 'Rare drop that drags the swarm into a crush zone.',
+    requirement: '10x combo',
+    test: (s) => s.hasAchievement('combo_10'),
+  },
+  {
+    id: 'power_second_wind',
+    type: 'powerup',
+    title: 'Second Wind',
+    desc: 'Once per run, lethal damage restores the core instead.',
+    requirement: 'Set a local high score',
+    test: (s) => s.hasAchievement('local_legend'),
+  },
+];
+
+const DEFAULT_LOADOUT = {
+  skin_sunforge: false,
+  skin_void: false,
+  bg_aurora: false,
+  sound_glass: false,
+  power_chain: false,
+  power_singularity: false,
+  power_second_wind: false,
+};
+
 const readStoredJson = (key, fallback) => {
   try {
     return JSON.parse(localStorage.getItem(key)) ?? fallback;
@@ -132,6 +203,7 @@ class AudioSys {
     this.musicTimer = null;
     this.enabled = false;
     this.muted = false;
+    this.soundPack = 'classic';
   }
 
   init() {
@@ -157,12 +229,16 @@ class AudioSys {
     }
   }
 
+  setSoundPack(soundPack) {
+    this.soundPack = soundPack;
+  }
+
   playTone(freq, type, duration, vol = 1, slideDown = false) {
     if (!this.enabled || !this.ctx || this.muted) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     
-    osc.type = type;
+    osc.type = this.soundPack === 'glass' && type !== 'sawtooth' ? 'sine' : type;
     osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
     if (slideDown) {
       osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + duration);
@@ -268,6 +344,15 @@ class AudioSys {
     this.playTone(90, 'sawtooth', 0.45, 0.6, true);
     this.playNoise(0.45, 0.7);
   }
+  chain() {
+    [740, 980, 1240, 1480].forEach((freq, i) => {
+      setTimeout(() => this.playTone(freq, 'square', 0.08, 0.18), i * 55);
+    });
+  }
+  singularity() {
+    this.playTone(180, 'sine', 0.6, 0.35, true);
+    this.playNoise(0.55, 0.35);
+  }
   damage() { 
     this.playTone(80, 'sawtooth', 0.4, 0.8, true); 
     this.playNoise(0.4, 0.8);
@@ -293,8 +378,11 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem(MUTE_KEY) === 'true');
   const [localHighScore, setLocalHighScore] = useState(() => Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0);
   const [achievements, setAchievements] = useState(() => readStoredJson(ACHIEVEMENTS_KEY, {}));
+  const [unlocks, setUnlocks] = useState(() => readStoredJson(UNLOCKS_KEY, {}));
+  const [loadout, setLoadout] = useState(() => ({ ...DEFAULT_LOADOUT, ...readStoredJson(LOADOUT_KEY, {}) }));
   const [celebrations, setCelebrations] = useState([]);
   const [activeEffects, setActiveEffects] = useState([]);
+  const [showBadges, setShowBadges] = useState(false);
   const isLocalMode = isLocalRuntime();
   
   const canvasRef = useRef(null);
@@ -323,6 +411,35 @@ export default function App() {
     });
   };
 
+  const checkUnlocks = (override = {}) => {
+    const progress = {
+      highScore: localHighScore,
+      badges: Object.keys(achievements).length,
+      hasAchievement: (id) => Boolean(achievements[id]),
+      ...override,
+    };
+
+    setUnlocks((current) => {
+      let changed = false;
+      const next = { ...current };
+
+      UNLOCKABLES.forEach((item) => {
+        if (!next[item.id] && item.test(progress)) {
+          next[item.id] = Date.now();
+          changed = true;
+          triggerCelebration('Unlock acquired', item.title, 'gold');
+          audio.achievement();
+        }
+      });
+
+      if (changed) {
+        localStorage.setItem(UNLOCKS_KEY, JSON.stringify(next));
+      }
+
+      return changed ? next : current;
+    });
+  };
+
   const checkAchievements = (stats = {}) => {
     const s = stateRef.current;
     const current = {
@@ -339,8 +456,38 @@ export default function App() {
       ...stats,
     };
 
+    const unlockedAchievementIds = { ...achievements };
     ACHIEVEMENTS.forEach((achievement) => {
-      if (achievement.test(current)) unlockAchievement(achievement.id);
+      if (achievement.test(current)) {
+        unlockAchievement(achievement.id);
+        unlockedAchievementIds[achievement.id] = Date.now();
+      }
+    });
+    checkUnlocks({
+      highScore: Math.max(localHighScore, current.score),
+      badges: Object.keys(unlockedAchievementIds).length,
+      hasAchievement: (id) => Boolean(unlockedAchievementIds[id]),
+    });
+  };
+
+  useEffect(() => {
+    checkUnlocks();
+  }, [localHighScore, achievements]);
+
+  useEffect(() => {
+    audio.setSoundPack(loadout.sound_glass && unlocks.sound_glass ? 'glass' : 'classic');
+  }, [loadout.sound_glass, unlocks.sound_glass]);
+
+  const toggleLoadout = (id) => {
+    if (!unlocks[id]) return;
+    setLoadout((current) => {
+      const next = { ...current, [id]: !current[id] };
+
+      if (id === 'skin_sunforge' && next.skin_sunforge) next.skin_void = false;
+      if (id === 'skin_void' && next.skin_void) next.skin_sunforge = false;
+
+      localStorage.setItem(LOADOUT_KEY, JSON.stringify(next));
+      return next;
     });
   };
 
@@ -462,6 +609,7 @@ export default function App() {
       isMouseDown: false,
       activePointerId: null,
       performance,
+      loadout: { ...loadout },
       nodes,
       maceHistory: [],
       enemies: [],
@@ -493,6 +641,7 @@ export default function App() {
       overdrives: 0,
       bombs: 0,
       freezes: 0,
+      secondWindUsed: false,
     };
     
     setScore(0);
@@ -659,6 +808,58 @@ export default function App() {
       spawnFloatingText(`BOMB x${destroyed}`, x, y, '#fb7185');
       audio.bomb();
       checkAchievements({ bombs: s.bombs, score: s.score });
+    };
+
+    const triggerChainLightning = (x, y) => {
+      let arcs = 0;
+      const targets = [...s.enemies]
+        .map((enemy) => ({ enemy, dist: Math.hypot(enemy.x - x, enemy.y - y) }))
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 7);
+
+      targets.forEach(({ enemy }, index) => {
+        const enemyIndex = s.enemies.indexOf(enemy);
+        if (enemyIndex >= 0) {
+          s.enemies.splice(enemyIndex, 1);
+          arcs++;
+          spawnParticles(enemy.x, enemy.y, '#fde047', 18, 2.2);
+          spawnFloatingText(index === 0 ? 'CHAIN!' : 'ZAP', enemy.x, enemy.y, '#fde047');
+          if (enemy.type === 'splitter') spawnSplitterShards(enemy);
+        }
+      });
+
+      s.score += arcs * 45;
+      s.powerupsCollected++;
+      s.shake += 12;
+      spawnParticles(x, y, '#fde047', 28, 2.5);
+      audio.chain();
+      checkAchievements({ score: s.score, powerupsCollected: s.powerupsCollected });
+    };
+
+    const triggerSingularity = (x, y) => {
+      let crushed = 0;
+      for (let i = s.enemies.length - 1; i >= 0; i--) {
+        const e = s.enemies[i];
+        const dist = Math.hypot(e.x - x, e.y - y);
+        if (dist < 420) {
+          e.x += (x - e.x) * 0.72;
+          e.y += (y - e.y) * 0.72;
+          if (dist < 260) {
+            s.enemies.splice(i, 1);
+            crushed++;
+            spawnParticles(e.x, e.y, '#c084fc', 16, 2);
+            if (e.type === 'splitter') spawnSplitterShards(e);
+          }
+        }
+      }
+
+      s.score += crushed * 55;
+      s.powerupsCollected++;
+      s.shake += 24;
+      spawnParticles(x, y, '#c084fc', 70, 3);
+      spawnFloatingText(`SINGULARITY x${crushed}`, x, y, '#e9d5ff');
+      audio.singularity();
+      checkAchievements({ score: s.score, powerupsCollected: s.powerupsCollected });
     };
 
     // Main Update Function
@@ -836,6 +1037,10 @@ export default function App() {
             s.powerupsCollected++;
             audio.powerup();
             spawnFloatingText("CORE SHIELD!", p.x, p.y, '#38bdf8');
+          } else if (p.type === 'chain') {
+            triggerChainLightning(p.x, p.y);
+          } else if (p.type === 'singularity') {
+            triggerSingularity(p.x, p.y);
           }
           checkAchievements({
             pickupsCollected: s.pickupsCollected,
@@ -894,6 +1099,8 @@ export default function App() {
                 else if (roll < 0.26) type = 'magnet'; // Pickup Magnet
                 else if (roll < 0.32) type = 'bomb'; // Screen-clearing burst
                 else if (roll < 0.38) type = 'shield'; // Brief core guard
+                else if (roll < 0.43 && s.loadout.power_chain) type = 'chain'; // Unlockable chain burst
+                else if (roll < 0.47 && s.loadout.power_singularity) type = 'singularity'; // Unlockable crush zone
                 s.pickups.push({x: e.x, y: e.y, type});
               }
 
@@ -983,6 +1190,21 @@ export default function App() {
           });
 
           if (s.health <= 0) {
+            if (s.loadout.power_second_wind && !s.secondWindUsed) {
+              s.secondWindUsed = true;
+              s.health = 1;
+              setHealth(1);
+              s.invulnTimer = 180;
+              s.shieldTimer = 360;
+              s.energy = Math.min(s.maxEnergy, s.energy + 50);
+              setEnergy(s.energy);
+              s.shake += 26;
+              spawnParticles(core.x, core.y, '#fef08a', 80, 3);
+              spawnFloatingText('SECOND WIND!', core.x, core.y - 32, '#fef08a');
+              audio.achievement();
+              continue;
+            }
+
             const storedHighScore = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
             if (s.score > storedHighScore) {
               localStorage.setItem(HIGH_SCORE_KEY, String(s.score));
@@ -1031,10 +1253,24 @@ export default function App() {
 
     // Main Draw Function
     const draw = () => {
+      const skin = s.loadout.skin_sunforge
+        ? { core: '#facc15', inner: '#fff7ed', rope: '#f59e0b', mace: '#f97316', trail: 'rgba(250, 204, 21, 0.62)' }
+        : s.loadout.skin_void
+          ? { core: '#a78bfa', inner: '#f5f3ff', rope: '#c084fc', mace: '#7c3aed', trail: 'rgba(192, 132, 252, 0.62)' }
+          : { core: '#0ff', inner: '#fff', rope: '#0ff', mace: null, trail: null };
+
       // Motion blur effect by drawing semi-transparent dark background
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = s.isOverdrive ? 'rgba(5, 0, 15, 0.2)' : `rgba(10, 10, 12, ${perf.motionBlurAlpha})`;
       ctx.fillRect(0, 0, s.width, s.height);
+      if (s.loadout.bg_aurora) {
+        const aurora = ctx.createLinearGradient(0, 0, s.width, s.height);
+        aurora.addColorStop(0, 'rgba(34, 211, 238, 0.08)');
+        aurora.addColorStop(0.52, 'rgba(168, 85, 247, 0.08)');
+        aurora.addColorStop(1, 'rgba(250, 204, 21, 0.05)');
+        ctx.fillStyle = aurora;
+        ctx.fillRect(0, 0, s.width, s.height);
+      }
 
       // Screen Shake
       ctx.save();
@@ -1081,6 +1317,12 @@ export default function App() {
         } else if (p.type === 'shield') {
           ctx.fillStyle = '#38bdf8';
           ctx.shadowColor = '#38bdf8';
+        } else if (p.type === 'chain') {
+          ctx.fillStyle = '#fde047';
+          ctx.shadowColor = '#fde047';
+        } else if (p.type === 'singularity') {
+          ctx.fillStyle = '#c084fc';
+          ctx.shadowColor = '#c084fc';
         } else {
           ctx.fillStyle = '#0ff';
           ctx.shadowColor = '#0ff';
@@ -1113,6 +1355,23 @@ export default function App() {
           ctx.lineTo(p.x + 5, p.y);
           ctx.moveTo(p.x, p.y - 5);
           ctx.lineTo(p.x, p.y + 5);
+          ctx.stroke();
+        } else if (p.type === 'chain') {
+          ctx.strokeStyle = '#fff';
+          ctx.shadowBlur = 0;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(p.x - 5, p.y - 7);
+          ctx.lineTo(p.x + 1, p.y - 1);
+          ctx.lineTo(p.x - 2, p.y - 1);
+          ctx.lineTo(p.x + 5, p.y + 7);
+          ctx.stroke();
+        } else if (p.type === 'singularity') {
+          ctx.strokeStyle = '#fff';
+          ctx.shadowBlur = 0;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 11, 0, Math.PI * 1.55);
           ctx.stroke();
         }
       });
@@ -1167,8 +1426,8 @@ export default function App() {
 
       // Draw Player Chain (Rope)
       ctx.shadowBlur = s.isOverdrive ? perf.ropeGlow * 2 : perf.ropeGlow;
-      ctx.shadowColor = s.isOverdrive ? '#fff' : '#0ff';
-      ctx.strokeStyle = s.isOverdrive ? '#fff' : '#0ff';
+      ctx.shadowColor = s.isOverdrive ? '#fff' : skin.rope;
+      ctx.strokeStyle = s.isOverdrive ? '#fff' : skin.rope;
       ctx.lineWidth = s.isOverdrive ? 6 : 3;
       ctx.beginPath();
       ctx.moveTo(s.nodes[0].x, s.nodes[0].y);
@@ -1180,13 +1439,13 @@ export default function App() {
       // Draw Player Core
       if (s.invulnTimer % 10 < 5) { // Blink if invulnerable
         const core = s.nodes[0];
-        ctx.fillStyle = '#0ff';
+        ctx.fillStyle = skin.core;
         ctx.shadowBlur = perf.ropeGlow * 2;
         ctx.beginPath();
         ctx.arc(core.x, core.y, CORE_RADIUS, 0, Math.PI * 2);
         ctx.fill();
         // Inner white core
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = skin.inner;
         ctx.beginPath();
         ctx.arc(core.x, core.y, CORE_RADIUS/2, 0, Math.PI * 2);
         ctx.fill();
@@ -1228,7 +1487,7 @@ export default function App() {
           let r = Math.min(255, maceSpeed * 10);
           let g = Math.max(0, 100 - maceSpeed * 2);
           grad.addColorStop(0, `rgba(${r}, ${g}, 0, 0)`);
-          grad.addColorStop(1, `rgba(${r}, ${g}, 0, 0.5)`);
+          grad.addColorStop(1, skin.trail ?? `rgba(${r}, ${g}, 0, 0.5)`);
         }
         
         ctx.strokeStyle = grad;
@@ -1244,6 +1503,9 @@ export default function App() {
       } else if (s.giantMaceTimer > 0) {
         ctx.shadowColor = '#f90';
         ctx.fillStyle = '#ffaa00';
+      } else if (skin.mace) {
+        ctx.shadowColor = skin.mace;
+        ctx.fillStyle = skin.mace;
       } else {
         let r = Math.min(255, 100 + maceSpeed * 8);
         let g = Math.max(0, 150 - maceSpeed * 3);
@@ -1343,6 +1605,40 @@ export default function App() {
         ))}
       </div>
 
+      {showBadges && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/85 p-4 backdrop-blur-md">
+          <div className="max-h-[86vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-cyan-400/30 bg-gray-900 p-6 shadow-[0_0_45px_rgba(34,211,238,0.18)]">
+            <div className="mb-5 flex items-center justify-between gap-4 border-b border-gray-800 pb-3">
+              <div className="flex items-center gap-2 text-cyan-200">
+                <Award size={20} />
+                <h2 className="text-2xl font-black tracking-widest">BADGES</h2>
+              </div>
+              <button
+                onClick={() => setShowBadges(false)}
+                className="rounded border border-gray-700 bg-gray-950 px-3 py-2 text-xs font-bold uppercase tracking-widest text-gray-300 transition-colors hover:border-cyan-400 hover:text-cyan-200"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {ACHIEVEMENTS.map((item) => {
+                const isUnlocked = Boolean(achievements[item.id]);
+                return (
+                  <div key={item.id} className={`rounded-lg border p-4 ${isUnlocked ? 'border-yellow-400/50 bg-yellow-950/25' : 'border-gray-800 bg-gray-950/55'}`}>
+                    <div className={`text-sm font-black ${isUnlocked ? 'text-yellow-200' : 'text-gray-500'}`}>{item.title}</div>
+                    <div className="mt-1 text-xs leading-relaxed text-gray-400">{item.desc}</div>
+                    <div className="mt-3 text-[10px] font-bold uppercase tracking-widest text-gray-600">
+                      {isUnlocked ? `Unlocked ${new Date(achievements[item.id]).toLocaleDateString()}` : 'Locked'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* --- UI HUD --- */}
       {gameState === 'playing' && (
         <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-start pointer-events-none z-10">
@@ -1440,6 +1736,45 @@ export default function App() {
                 <Play className="mr-2" size={24} fill="currentColor" />
                 INITIATE NEON CORE
                 </button>
+
+                <div className="rounded-lg border border-gray-800 bg-gray-950/60 p-4">
+                  <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-500">
+                    <Sparkles size={14} />
+                    Permanent Unlocks
+                  </div>
+                  <div className="grid gap-2">
+                    {UNLOCKABLES.map((item) => {
+                      const isUnlocked = Boolean(unlocks[item.id]);
+                      const isEnabled = Boolean(loadout[item.id]);
+                      const TypeIcon = item.type === 'skin' ? Palette : item.type === 'sound' ? Music : item.type === 'background' ? Eye : Sparkles;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => toggleLoadout(item.id)}
+                          disabled={!isUnlocked}
+                          className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
+                            isUnlocked
+                              ? isEnabled
+                                ? 'border-cyan-300/60 bg-cyan-950/40 text-cyan-100'
+                                : 'border-gray-700 bg-gray-900/70 text-gray-200 hover:border-cyan-400/50'
+                              : 'border-gray-800 bg-gray-950/50 text-gray-600'
+                          }`}
+                        >
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-gray-950">
+                            <TypeIcon size={16} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-sm font-black">{item.title}</span>
+                              <span className="text-[10px] font-bold uppercase tracking-widest">{isUnlocked ? (isEnabled ? 'On' : 'Off') : 'Locked'}</span>
+                            </div>
+                            <div className="mt-1 text-xs leading-snug text-gray-400">{isUnlocked ? item.desc : item.requirement}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
             </div>
 
             {/* Middle Column: Combat Key */}
@@ -1511,7 +1846,12 @@ export default function App() {
                   </div>
                   <div className="rounded-lg border border-gray-800 bg-gray-950/50 p-3">
                     <div className="text-gray-500 uppercase tracking-widest">Badges</div>
-                    <div className="text-lg font-black text-cyan-300">{Object.keys(achievements).length}/{ACHIEVEMENTS.length}</div>
+                    <button
+                      onClick={() => setShowBadges(true)}
+                      className="text-left text-lg font-black text-cyan-300 underline decoration-cyan-400/40 underline-offset-4 transition-colors hover:text-cyan-100"
+                    >
+                      {Object.keys(achievements).length}/{ACHIEVEMENTS.length}
+                    </button>
                   </div>
                 </div>
                 {!isLocalMode && (
@@ -1533,6 +1873,12 @@ export default function App() {
                   <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-500">
                     <Award size={14} />
                     Local Achievements
+                    <button
+                      onClick={() => setShowBadges(true)}
+                      className="ml-auto text-cyan-400 transition-colors hover:text-cyan-200"
+                    >
+                      View
+                    </button>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {ACHIEVEMENTS.slice(0, 6).map((item) => (
@@ -1563,7 +1909,9 @@ export default function App() {
               Local Best {localHighScore.toLocaleString()}
             </div>
             <div className="rounded-lg border border-cyan-400/30 bg-gray-950/50 px-4 py-2 text-cyan-200">
-              Badges {Object.keys(achievements).length}/{ACHIEVEMENTS.length}
+              <button onClick={() => setShowBadges(true)} className="underline decoration-cyan-400/40 underline-offset-4 hover:text-cyan-100">
+                Badges {Object.keys(achievements).length}/{ACHIEVEMENTS.length}
+              </button>
             </div>
           </div>
 
@@ -1581,22 +1929,38 @@ export default function App() {
                 <button
                     onClick={submitScore}
                     disabled={!playerName.trim() || isSubmitting}
-                    className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-800 px-4 rounded-lg transition-colors"
+                    className="inline-flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-800 px-4 rounded-lg font-bold transition-colors"
                 >
-                    {isSubmitting ? "..." : <Zap size={20} fill="currentColor"/>}
+                    {isSubmitting ? "SENDING..." : <><Send size={18} /> SUBMIT</>}
                 </button>
             </div>
           </div>
           )}
-          
-          <button
-            onClick={startGame}
-            className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-red-600 text-xl rounded-xl hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-600 overflow-hidden shadow-[0_0_30px_rgba(220,38,38,0.5)]"
-          >
-            <div className="absolute inset-0 bg-white/20 group-hover:translate-x-full -translate-x-full transition-transform duration-500 ease-out skew-x-12"></div>
-            <RotateCcw className="mr-3" size={24} />
-            RESTART SIMULATION
-          </button>
+
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              onClick={() => setShowBadges(true)}
+              className="inline-flex items-center justify-center rounded-lg border border-cyan-400/40 bg-gray-950/70 px-5 py-4 font-bold text-cyan-100 transition-colors hover:bg-cyan-950/70"
+            >
+              <Award className="mr-2" size={20} />
+              VIEW BADGES
+            </button>
+            <button
+              onClick={() => setGameState('menu')}
+              className="inline-flex items-center justify-center rounded-lg border border-gray-700 bg-gray-950/70 px-5 py-4 font-bold text-gray-100 transition-colors hover:border-yellow-300/50 hover:text-yellow-100"
+            >
+              <Home className="mr-2" size={20} />
+              MAIN MENU
+            </button>
+            <button
+              onClick={startGame}
+              className="group relative inline-flex items-center justify-center overflow-hidden rounded-lg bg-red-600 px-6 py-4 text-xl font-bold text-white shadow-[0_0_30px_rgba(220,38,38,0.5)] transition-all duration-200 hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2"
+            >
+              <div className="absolute inset-0 bg-white/20 group-hover:translate-x-full -translate-x-full transition-transform duration-500 ease-out skew-x-12"></div>
+              <RotateCcw className="mr-3" size={24} />
+              RESTART
+            </button>
+          </div>
         </div>
       )}
     </div>
