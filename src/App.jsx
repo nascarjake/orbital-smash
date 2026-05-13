@@ -16,6 +16,7 @@ const UNLOCKS_KEY = 'orbital_smash_unlocks';
 const LOADOUT_KEY = 'orbital_smash_loadout';
 const LOCAL_SCORES_KEY = 'orbital_smash_local_scores';
 const MUTE_KEY = 'orbital_smash_muted';
+const GRAPHICS_KEY = 'orbital_smash_graphics';
 
 const DREAMLO_PUBLIC = "69f664cb8f40bb1068bd441a";
 const DREAMLO_PRIVATE = "qJcEBUUmAE6ApG2ZQjVRiw4nBSAtJFnUGNixUKRstFdA";
@@ -246,6 +247,15 @@ const QUALITY_PRESETS = {
   ],
 };
 
+const GRAPHICS_OPTIONS = [
+  { id: 'auto', label: 'Auto' },
+  { id: 'high', label: 'High', quality: 0 },
+  { id: 'medium', label: 'Medium', quality: 1 },
+  { id: 'low', label: 'Low', quality: 2 },
+];
+
+const qualityLabel = (quality) => ['High', 'Medium', 'Low'][quality] ?? 'High';
+
 const applyQualityPreset = (perf, quality = perf.quality ?? 0) => {
   const presets = perf.isMobile ? QUALITY_PRESETS.mobile : QUALITY_PRESETS.desktop;
   const nextQuality = Math.max(0, Math.min(quality, presets.length - 1));
@@ -447,6 +457,8 @@ export default function App() {
   const [showUnlocks, setShowUnlocks] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
+  const [graphicsMode, setGraphicsMode] = useState(() => localStorage.getItem(GRAPHICS_KEY) || 'auto');
+  const [graphicsQuality, setGraphicsQuality] = useState(0);
   const isLocalMode = isLocalRuntime();
   
   const canvasRef = useRef(null);
@@ -595,6 +607,15 @@ export default function App() {
     }
   };
 
+  const setGraphics = (mode) => {
+    setGraphicsMode(mode);
+    localStorage.setItem(GRAPHICS_KEY, mode);
+    const option = GRAPHICS_OPTIONS.find((item) => item.id === mode);
+    if (option?.quality !== undefined) {
+      setGraphicsQuality(option.quality);
+    }
+  };
+
   const fetchLeaderboard = async () => {
     if (isLocalMode) {
       setLeaderboard([]);
@@ -648,10 +669,13 @@ export default function App() {
     const width = window.innerWidth;
     const height = window.innerHeight;
     const isMobile = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < MOBILE_BREAKPOINT;
+    const graphicsOption = GRAPHICS_OPTIONS.find((item) => item.id === graphicsMode) ?? GRAPHICS_OPTIONS[0];
+    const initialQuality = graphicsOption.quality ?? 0;
     const performance = isMobile
       ? {
           isMobile: true,
-          quality: 0,
+          quality: initialQuality,
+          autoQuality: graphicsMode === 'auto',
           frameAvg: FRAME_DURATION,
           qualityCooldown: 0,
           coreFollow: 0.22,
@@ -678,7 +702,8 @@ export default function App() {
         }
       : {
           isMobile: false,
-          quality: 0,
+          quality: initialQuality,
+          autoQuality: graphicsMode === 'auto',
           frameAvg: FRAME_DURATION,
           qualityCooldown: 0,
           coreFollow: 0.15,
@@ -704,6 +729,7 @@ export default function App() {
           hudSyncInterval: 10,
         };
     applyQualityPreset(performance, performance.quality);
+    setGraphicsQuality(performance.quality);
     
     // Physics nodes for the chain-mace (Verlet integration)
     const nodes = Array.from({ length: NUM_NODES }, (_, i) => ({
@@ -1076,6 +1102,7 @@ export default function App() {
     resizeCanvas();
 
     const updateQuality = (deltaMs) => {
+      if (!perf.autoQuality) return;
       if (!Number.isFinite(deltaMs) || deltaMs <= 0) return;
       perf.frameAvg = perf.frameAvg * 0.94 + deltaMs * 0.06;
       if (perf.qualityCooldown > 0) perf.qualityCooldown--;
@@ -1086,10 +1113,12 @@ export default function App() {
 
       if (perf.qualityCooldown <= 0 && perf.frameAvg > downThreshold && perf.quality < presets.length - 1) {
         applyQualityPreset(perf, perf.quality + 1);
+        setGraphicsQuality(perf.quality);
         perf.qualityCooldown = 90;
         resizeCanvas();
       } else if (perf.qualityCooldown <= 0 && perf.frameAvg < upThreshold && perf.quality > 0) {
         applyQualityPreset(perf, perf.quality - 1);
+        setGraphicsQuality(perf.quality);
         perf.qualityCooldown = 180;
         resizeCanvas();
       } else if (Math.abs((perf.renderScale ?? 1) - appliedRenderScale) > 0.01) {
@@ -2327,6 +2356,9 @@ export default function App() {
                 CLICK TO ACTIVATE!
               </div>
             )}
+            <div className="mt-1 rounded border border-gray-700 bg-gray-950/70 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+              GFX {graphicsMode === 'auto' ? `Auto ${qualityLabel(graphicsQuality)}` : qualityLabel(graphicsQuality)}
+            </div>
           </div>
         </div>
       )}
@@ -2347,12 +2379,34 @@ export default function App() {
                   ORBITAL SMASH
                 </h1>
               </div>
-              <div className="hidden gap-2 text-xs font-bold uppercase tracking-widest text-gray-400 sm:flex">
-                <button onClick={() => setShowBadges(true)} className="rounded border border-gray-700 bg-gray-950/70 px-3 py-2 hover:border-cyan-400 hover:text-cyan-200">
-                  Badges {Object.keys(achievements).length}/{ACHIEVEMENTS.length}
-                </button>
-                <div className="rounded border border-gray-700 bg-gray-950/70 px-3 py-2 text-yellow-200">
-                  Best {localHighScore.toLocaleString()}
+              <div className="hidden flex-col items-end gap-2 sm:flex">
+                <div className="flex gap-2 text-xs font-bold uppercase tracking-widest text-gray-400">
+                  <button onClick={() => setShowBadges(true)} className="rounded border border-gray-700 bg-gray-950/70 px-3 py-2 hover:border-cyan-400 hover:text-cyan-200">
+                    Badges {Object.keys(achievements).length}/{ACHIEVEMENTS.length}
+                  </button>
+                  <div className="rounded border border-gray-700 bg-gray-950/70 px-3 py-2 text-yellow-200">
+                    Best {localHighScore.toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded border border-gray-700 bg-gray-950/70 p-1">
+                  <div className="mb-1 px-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
+                    Graphics {graphicsMode === 'auto' ? `Auto (${qualityLabel(graphicsQuality)})` : qualityLabel(graphicsQuality)}
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {GRAPHICS_OPTIONS.map((option) => (
+                      <button
+                        key={option.id}
+                        onClick={() => setGraphics(option.id)}
+                        className={`rounded px-2 py-1 text-[10px] font-black uppercase tracking-widest transition-colors ${
+                          graphicsMode === option.id
+                            ? 'bg-cyan-500 text-gray-950'
+                            : 'bg-gray-900 text-gray-400 hover:bg-cyan-950 hover:text-cyan-100'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2421,6 +2475,21 @@ export default function App() {
                   Board
                 </button>
               </div>
+            </div>
+            <div className="grid grid-cols-4 gap-1 rounded-lg border border-gray-800 bg-gray-950/70 p-1 text-[10px] font-black uppercase tracking-widest sm:hidden">
+              {GRAPHICS_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => setGraphics(option.id)}
+                  className={`rounded px-2 py-2 transition-colors ${
+                    graphicsMode === option.id
+                      ? 'bg-cyan-500 text-gray-950'
+                      : 'bg-gray-900 text-gray-400'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
