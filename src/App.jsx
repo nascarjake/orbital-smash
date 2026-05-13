@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, RotateCcw, Zap, Shield, Trophy } from 'lucide-react';
+import { Award, Bomb, Magnet, Play, RotateCcw, Shield, Snowflake, Trophy, Volume2, VolumeX, Zap } from 'lucide-react';
 
 // --- GAME CONSTANTS ---
 const NUM_NODES = 7;           // Number of segments in the chain
@@ -10,6 +10,9 @@ const MAX_MACE_SPEED = 40;
 const BASE_ENEMY_SPAWN_RATE = 100; // Frames between spawns (Increased from 60 for easier start)
 const MOBILE_BREAKPOINT = 768;
 const FRAME_DURATION = 1000 / 60;
+const HIGH_SCORE_KEY = 'orbital_smash_high_score';
+const ACHIEVEMENTS_KEY = 'orbital_smash_achievements';
+const MUTE_KEY = 'orbital_smash_muted';
 
 const DREAMLO_PUBLIC = "69f664cb8f40bb1068bd441a";
 const DREAMLO_PRIVATE = "qJcEBUUmAE6ApG2ZQjVRiw4nBSAtJFnUGNixUKRstFdA";
@@ -77,26 +80,63 @@ const normalizeLeaderboardEntries = (data) => {
     .slice(0, 10);
 };
 
+const ACHIEVEMENTS = [
+  { id: 'first_smash', title: 'First Contact', desc: 'Smash your first enemy.', test: (s) => s.kills >= 1 },
+  { id: 'combo_10', title: 'Orbit Artist', desc: 'Reach a 10x combo.', test: (s) => s.maxCombo >= 10 },
+  { id: 'score_1000', title: 'Four Digits', desc: 'Score 1,000 points.', test: (s) => s.score >= 1000 },
+  { id: 'overdrive', title: 'White Hot', desc: 'Trigger Overdrive.', test: (s) => s.overdrives >= 1 },
+  { id: 'collector', title: 'Vacuum Core', desc: 'Collect 20 pickups.', test: (s) => s.pickupsCollected >= 20 },
+  { id: 'wave_3', title: 'Still Spinning', desc: 'Reach wave 3.', test: (s) => s.wave >= 3 },
+  { id: 'power_play', title: 'Power Trip', desc: 'Collect 5 special powerups.', test: (s) => s.powerupsCollected >= 5 },
+  { id: 'bomb_squad', title: 'Chain Reaction', desc: 'Detonate 3 bombs.', test: (s) => s.bombs >= 3 },
+  { id: 'deep_freeze', title: 'Deep Freeze', desc: 'Collect 3 freeze cores.', test: (s) => s.freezes >= 3 },
+  { id: 'local_legend', title: 'Local Legend', desc: 'Set a local high score.', test: (s) => s.didSetHighScore },
+];
+
+const readStoredJson = (key, fallback) => {
+  try {
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 // --- AUDIO SYSTEM (Synthesized Retro SFX) ---
 class AudioSys {
   constructor() {
     this.ctx = null;
     this.masterGain = null;
+    this.musicGain = null;
+    this.musicTimer = null;
     this.enabled = false;
+    this.muted = false;
   }
 
   init() {
-    if (this.enabled) return;
+    if (this.enabled) {
+      if (this.ctx?.state === 'suspended') this.ctx.resume();
+      return;
+    }
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.value = 0.3; // Global volume
+    this.musicGain = this.ctx.createGain();
+    this.masterGain.gain.value = this.muted ? 0 : 0.3; // Global volume
+    this.musicGain.gain.value = 0.18;
+    this.musicGain.connect(this.masterGain);
     this.masterGain.connect(this.ctx.destination);
     if (this.ctx.state === 'suspended') this.ctx.resume();
     this.enabled = true;
   }
 
+  setMuted(muted) {
+    this.muted = muted;
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setTargetAtTime(muted ? 0 : 0.3, this.ctx.currentTime, 0.03);
+    }
+  }
+
   playTone(freq, type, duration, vol = 1, slideDown = false) {
-    if (!this.enabled || !this.ctx) return;
+    if (!this.enabled || !this.ctx || this.muted) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     
@@ -117,7 +157,7 @@ class AudioSys {
   }
 
   playNoise(duration, vol) {
-    if (!this.enabled || !this.ctx) return;
+    if (!this.enabled || !this.ctx || this.muted) return;
     const bufferSize = this.ctx.sampleRate * duration;
     const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
     const data = buffer.getChannelData(0);
@@ -142,6 +182,51 @@ class AudioSys {
     noise.start();
   }
 
+  playMusicNote(freq, duration, delay = 0, vol = 0.08) {
+    if (!this.enabled || !this.ctx || this.muted || !this.musicGain) return;
+    const now = this.ctx.currentTime + delay;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, now);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1200, now);
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(vol, now + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.musicGain);
+    osc.start(now);
+    osc.stop(now + duration + 0.04);
+  }
+
+  startMusic() {
+    if (!this.enabled || this.musicTimer) return;
+    const notes = [110, 146.83, 164.81, 220, 196, 164.81, 146.83, 123.47];
+    let step = 0;
+    const playBar = () => {
+      if (!this.enabled || this.muted) return;
+      const root = notes[step % notes.length];
+      this.playMusicNote(root, 0.42, 0, 0.07);
+      this.playMusicNote(root * 2, 0.18, 0.18, 0.04);
+      this.playMusicNote(root * 1.5, 0.16, 0.36, 0.035);
+      step++;
+    };
+    playBar();
+    this.musicTimer = window.setInterval(playBar, 520);
+  }
+
+  stopMusic() {
+    if (this.musicTimer) {
+      window.clearInterval(this.musicTimer);
+      this.musicTimer = null;
+    }
+  }
+
   hit() { this.playTone(200, 'square', 0.1, 0.4); }
   smash() { 
     this.playTone(150, 'sawtooth', 0.3, 0.5, true); 
@@ -151,6 +236,15 @@ class AudioSys {
   powerup() {
     this.playTone(400, 'sine', 0.1, 0.3);
     setTimeout(() => this.playTone(600, 'sine', 0.2, 0.3), 100);
+  }
+  achievement() {
+    this.playTone(523.25, 'sine', 0.12, 0.25);
+    setTimeout(() => this.playTone(659.25, 'sine', 0.12, 0.25), 90);
+    setTimeout(() => this.playTone(783.99, 'sine', 0.22, 0.3), 180);
+  }
+  bomb() {
+    this.playTone(90, 'sawtooth', 0.45, 0.6, true);
+    this.playNoise(0.45, 0.7);
   }
   damage() { 
     this.playTone(80, 'sawtooth', 0.4, 0.8, true); 
@@ -174,10 +268,69 @@ export default function App() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [playerName, setPlayerName] = useState(() => localStorage.getItem('orbital_smash_name') || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isMuted, setIsMuted] = useState(() => localStorage.getItem(MUTE_KEY) === 'true');
+  const [localHighScore, setLocalHighScore] = useState(() => Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0);
+  const [achievements, setAchievements] = useState(() => readStoredJson(ACHIEVEMENTS_KEY, {}));
+  const [celebrations, setCelebrations] = useState([]);
+  const [activeEffects, setActiveEffects] = useState([]);
   
   const canvasRef = useRef(null);
   const reqRef = useRef(null);
   const stateRef = useRef(null);
+
+  const triggerCelebration = (title, detail, tone = 'cyan') => {
+    const id = `${Date.now()}-${Math.random()}`;
+    setCelebrations((items) => [...items.slice(-2), { id, title, detail, tone }]);
+    window.setTimeout(() => {
+      setCelebrations((items) => items.filter((item) => item.id !== id));
+    }, 3400);
+  };
+
+  const unlockAchievement = (id) => {
+    const achievement = ACHIEVEMENTS.find((item) => item.id === id);
+    if (!achievement) return;
+
+    setAchievements((current) => {
+      if (current[id]) return current;
+      const next = { ...current, [id]: Date.now() };
+      localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(next));
+      triggerCelebration('Achievement unlocked', achievement.title, 'gold');
+      audio.achievement();
+      return next;
+    });
+  };
+
+  const checkAchievements = (stats = {}) => {
+    const s = stateRef.current;
+    const current = {
+      score: s?.score ?? score,
+      kills: s?.kills ?? 0,
+      maxCombo: s?.maxCombo ?? 0,
+      pickupsCollected: s?.pickupsCollected ?? 0,
+      powerupsCollected: s?.powerupsCollected ?? 0,
+      overdrives: s?.overdrives ?? 0,
+      wave: s?.wave ?? 1,
+      bombs: s?.bombs ?? 0,
+      freezes: s?.freezes ?? 0,
+      didSetHighScore: false,
+      ...stats,
+    };
+
+    ACHIEVEMENTS.forEach((achievement) => {
+      if (achievement.test(current)) unlockAchievement(achievement.id);
+    });
+  };
+
+  const toggleMute = () => {
+    const next = !isMuted;
+    setIsMuted(next);
+    localStorage.setItem(MUTE_KEY, String(next));
+    audio.setMuted(next);
+    if (!next) {
+      audio.init();
+      audio.startMusic();
+    }
+  };
 
   const fetchLeaderboard = async () => {
     try {
@@ -296,15 +449,28 @@ export default function App() {
       combo: 0,
       comboTimer: 0,
       giantMaceTimer: 0,
+      freezeTimer: 0,
+      magnetTimer: 0,
+      shieldTimer: 0,
+      kills: 0,
+      maxCombo: 0,
+      pickupsCollected: 0,
+      powerupsCollected: 0,
+      overdrives: 0,
+      bombs: 0,
+      freezes: 0,
     };
     
     setScore(0);
     setHealth(3);
     setEnergy(0);
+    setActiveEffects([]);
   };
 
   const startGame = () => {
     audio.init();
+    audio.setMuted(isMuted);
+    audio.startMusic();
     initEngine();
     setGameState('playing');
   };
@@ -368,6 +534,7 @@ export default function App() {
     const spawnEnemy = () => {
       const isFast = Math.random() < 0.2 * (s.wave * 0.5);
       const isTank = Math.random() < 0.1 * (s.wave * 0.5);
+      const isSplitter = s.wave >= 2 && Math.random() < 0.08 + s.wave * 0.01;
       
       let radius = 15;
       let hp = 1;
@@ -375,7 +542,9 @@ export default function App() {
       let type = 'basic';
       let color = '#f0f';
 
-      if (isFast) {
+      if (isSplitter) {
+        radius = 18; speed = 1.7; hp = 2; type = 'splitter'; color = '#a855f7';
+      } else if (isFast) {
         radius = 12; speed = 4; type = 'fast'; color = '#ff0';
       } else if (isTank) {
         radius = 25; speed = 1.2; hp = 3; type = 'tank'; color = '#0f0';
@@ -390,6 +559,24 @@ export default function App() {
         y: s.height/2 + Math.sin(angle) * dist,
         vx: 0, vy: 0, radius, hp, speed, type, color, hitFlash: 0
       });
+    };
+
+    const spawnSplitterShards = (enemy) => {
+      for (let n = 0; n < 2; n++) {
+        const angle = Math.random() * Math.PI * 2;
+        s.enemies.push({
+          x: enemy.x + Math.cos(angle) * 20,
+          y: enemy.y + Math.sin(angle) * 20,
+          vx: Math.cos(angle) * 6,
+          vy: Math.sin(angle) * 6,
+          radius: 10,
+          hp: 1,
+          speed: 3.6,
+          type: 'fast',
+          color: '#facc15',
+          hitFlash: 0,
+        });
+      }
     };
 
     const spawnParticles = (x, y, color, count, speedFactor = 1) => {
@@ -419,6 +606,27 @@ export default function App() {
       }
     };
 
+    const detonateBomb = (x, y) => {
+      let destroyed = 0;
+      for (let i = s.enemies.length - 1; i >= 0; i--) {
+        const e = s.enemies[i];
+        const dist = Math.hypot(e.x - x, e.y - y);
+        if (dist < 310) {
+          s.enemies.splice(i, 1);
+          destroyed++;
+          spawnParticles(e.x, e.y, e.color, 12, 2);
+          if (e.type === 'splitter') spawnSplitterShards(e);
+        }
+      }
+      s.bombs++;
+      s.score += destroyed * 35;
+      s.shake += 18;
+      spawnParticles(x, y, '#fb7185', 45, 3);
+      spawnFloatingText(`BOMB x${destroyed}`, x, y, '#fb7185');
+      audio.bomb();
+      checkAchievements({ bombs: s.bombs, score: s.score });
+    };
+
     // Main Update Function
     const update = () => {
       s.frames++;
@@ -434,12 +642,17 @@ export default function App() {
         s.isOverdrive = true;
         s.energy = 0;
         s.overdriveTimer = 300; // 5 seconds at 60fps
+        s.overdrives++;
         s.shake += 20;
         audio.overdrive();
         setEnergy(0);
+        checkAchievements({ overdrives: s.overdrives });
       }
 
       if (s.giantMaceTimer > 0) s.giantMaceTimer--;
+      if (s.freezeTimer > 0) s.freezeTimer--;
+      if (s.magnetTimer > 0) s.magnetTimer--;
+      if (s.shieldTimer > 0) s.shieldTimer--;
 
       const activeMaceRadius = s.isOverdrive ? MACE_RADIUS * 2.5 : (s.giantMaceTimer > 0 ? MACE_RADIUS * 2.0 : MACE_RADIUS);
       
@@ -516,6 +729,9 @@ export default function App() {
       if (s.frames % 1200 === 0) {
         s.wave++;
         s.spawnRate = Math.max(20, s.spawnRate - 3); // More gentle scaling
+        spawnFloatingText(`WAVE ${s.wave}`, s.width / 2, 90, '#67e8f9');
+        triggerCelebration(`Wave ${s.wave}`, 'The swarm is getting meaner.', 'cyan');
+        checkAchievements({ wave: s.wave });
       }
 
       // Combo Decay
@@ -539,16 +755,19 @@ export default function App() {
         let dy = core.y - p.y;
         let dist = Math.hypot(dx, dy);
         
-        if (dist < 150 || s.isOverdrive) {
-          p.x += (dx / dist) * 8;
-          p.y += (dy / dist) * 8;
+        const magnetRange = s.magnetTimer > 0 ? 320 : 150;
+        if ((dist < magnetRange || s.isOverdrive) && dist > 0.01) {
+          const pull = s.magnetTimer > 0 ? 12 : 8;
+          p.x += (dx / dist) * pull;
+          p.y += (dy / dist) * pull;
         }
 
         // Collection
         if (dist < CORE_RADIUS + 5) {
+          s.pickupsCollected++;
           if (p.type === 'energy' || !p.type) {
             if (!s.isOverdrive) {
-              s.energy = Math.min(s.maxEnergy, s.energy + 5);
+              s.energy = Math.min(s.maxEnergy, s.energy + (s.magnetTimer > 0 ? 7 : 5));
               setEnergy(s.energy);
             }
             audio.collect();
@@ -561,9 +780,35 @@ export default function App() {
             spawnFloatingText("+1 HEALTH", p.x, p.y, '#0f0');
           } else if (p.type === 'giant') {
             s.giantMaceTimer = 600; // 10 seconds
+            s.powerupsCollected++;
             audio.powerup();
             spawnFloatingText("GIANT MACE!", p.x, p.y, '#f90');
+          } else if (p.type === 'freeze') {
+            s.freezeTimer = 300;
+            s.freezes++;
+            s.powerupsCollected++;
+            audio.powerup();
+            spawnFloatingText("TIME FREEZE!", p.x, p.y, '#93c5fd');
+          } else if (p.type === 'magnet') {
+            s.magnetTimer = 600;
+            s.powerupsCollected++;
+            audio.powerup();
+            spawnFloatingText("MAGNET CORE!", p.x, p.y, '#22d3ee');
+          } else if (p.type === 'bomb') {
+            s.powerupsCollected++;
+            detonateBomb(p.x, p.y);
+          } else if (p.type === 'shield') {
+            s.shieldTimer = 480;
+            s.powerupsCollected++;
+            audio.powerup();
+            spawnFloatingText("CORE SHIELD!", p.x, p.y, '#38bdf8');
           }
+          checkAchievements({
+            pickupsCollected: s.pickupsCollected,
+            powerupsCollected: s.powerupsCollected,
+            freezes: s.freezes,
+            score: s.score,
+          });
           s.pickups.splice(i, 1);
         }
       }
@@ -575,8 +820,9 @@ export default function App() {
 
         // AI: Move towards core
         let angleToCore = Math.atan2(core.y - e.y, core.x - e.x);
-        e.vx = Math.cos(angleToCore) * e.speed;
-        e.vy = Math.sin(angleToCore) * e.speed;
+        const freezeFactor = s.freezeTimer > 0 ? 0.28 : 1;
+        e.vx = Math.cos(angleToCore) * e.speed * freezeFactor;
+        e.vy = Math.sin(angleToCore) * e.speed * freezeFactor;
 
         e.x += e.vx;
         e.y += e.vy;
@@ -605,20 +851,33 @@ export default function App() {
               spawnParticles(e.x, e.y, e.color, 15, maceSpeed * 0.1);
               
               // Drop Pickup
-              if (Math.random() < 0.4) {
+              if (Math.random() < 0.45) {
                 let type = 'energy';
                 let roll = Math.random();
                 if (roll < 0.05) type = 'health'; // 5% chance for Health
-                else if (roll < 0.15) type = 'giant'; // 10% chance for Giant Mace
+                else if (roll < 0.12) type = 'giant'; // Giant Mace
+                else if (roll < 0.19) type = 'freeze'; // Time Freeze
+                else if (roll < 0.26) type = 'magnet'; // Pickup Magnet
+                else if (roll < 0.32) type = 'bomb'; // Screen-clearing burst
+                else if (roll < 0.38) type = 'shield'; // Brief core guard
                 s.pickups.push({x: e.x, y: e.y, type});
               }
 
+              if (e.type === 'splitter') spawnSplitterShards(e);
+
               // Combo & Score
+              s.kills++;
               s.combo++;
+              s.maxCombo = Math.max(s.maxCombo, s.combo);
               s.comboTimer = 120; // 2 seconds to keep combo
               let points = 10 * s.combo;
               s.score += points;
               spawnFloatingText(s.combo > 1 ? `${points} (x${s.combo})` : `${points}`, e.x, e.y, '#fff');
+              checkAchievements({
+                score: s.score,
+                kills: s.kills,
+                maxCombo: s.maxCombo,
+              });
               
               // Juice
               if (maceSpeed > 25 || s.isOverdrive) {
@@ -651,6 +910,24 @@ export default function App() {
         let cDist = Math.hypot(cdx, cdy);
         
         if (cDist < CORE_RADIUS + e.radius && s.invulnTimer <= 0) {
+          if (s.shieldTimer > 0) {
+            s.shieldTimer = 0;
+            s.invulnTimer = 40;
+            s.shake += 12;
+            audio.powerup();
+            spawnParticles(core.x, core.y, '#38bdf8', 36, 2.5);
+            spawnFloatingText("SHIELD BREAK", core.x, core.y - 25, '#38bdf8');
+            s.enemies.forEach(en => {
+              let dx = en.x - core.x;
+              let dy = en.y - core.y;
+              let d = Math.max(1, Math.hypot(dx, dy));
+              if (d < 260) {
+                en.x += (dx/d) * 75;
+                en.y += (dy/d) * 75;
+              }
+            });
+            continue;
+          }
           // Take Damage
           s.health--;
           setHealth(s.health);
@@ -672,6 +949,15 @@ export default function App() {
           });
 
           if (s.health <= 0) {
+            const storedHighScore = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+            if (s.score > storedHighScore) {
+              localStorage.setItem(HIGH_SCORE_KEY, String(s.score));
+              setLocalHighScore(s.score);
+              triggerCelebration('New high score', `${s.score.toLocaleString()} points`, 'gold');
+              checkAchievements({ didSetHighScore: true, score: s.score });
+              audio.achievement();
+            }
+            audio.stopMusic();
             setScore(s.score);
             setGameState('gameover');
           }
@@ -698,7 +984,15 @@ export default function App() {
       }
       
       // Sync score to React state periodically to avoid lag
-      if (s.frames % perf.hudSyncInterval === 0) setScore(s.score);
+      if (s.frames % perf.hudSyncInterval === 0) {
+        setScore(s.score);
+        setActiveEffects([
+          s.giantMaceTimer > 0 && { label: 'GIANT', value: s.giantMaceTimer },
+          s.freezeTimer > 0 && { label: 'FREEZE', value: s.freezeTimer },
+          s.magnetTimer > 0 && { label: 'MAGNET', value: s.magnetTimer },
+          s.shieldTimer > 0 && { label: 'SHIELD', value: s.shieldTimer },
+        ].filter(Boolean));
+      }
     };
 
     // Main Draw Function
@@ -741,6 +1035,18 @@ export default function App() {
         } else if (p.type === 'giant') {
           ctx.fillStyle = '#f90';
           ctx.shadowColor = '#f90';
+        } else if (p.type === 'freeze') {
+          ctx.fillStyle = '#93c5fd';
+          ctx.shadowColor = '#93c5fd';
+        } else if (p.type === 'magnet') {
+          ctx.fillStyle = '#22d3ee';
+          ctx.shadowColor = '#22d3ee';
+        } else if (p.type === 'bomb') {
+          ctx.fillStyle = '#fb7185';
+          ctx.shadowColor = '#fb7185';
+        } else if (p.type === 'shield') {
+          ctx.fillStyle = '#38bdf8';
+          ctx.shadowColor = '#38bdf8';
         } else {
           ctx.fillStyle = '#0ff';
           ctx.shadowColor = '#0ff';
@@ -757,14 +1063,32 @@ export default function App() {
           ctx.shadowBlur = 0;
           ctx.fillRect(p.x - 1, p.y - 4, 2, 8);
           ctx.fillRect(p.x - 4, p.y - 1, 8, 2);
+        } else if (p.type === 'bomb') {
+          ctx.strokeStyle = '#fff';
+          ctx.shadowBlur = 0;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (p.type === 'freeze') {
+          ctx.strokeStyle = '#fff';
+          ctx.shadowBlur = 0;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(p.x - 5, p.y);
+          ctx.lineTo(p.x + 5, p.y);
+          ctx.moveTo(p.x, p.y - 5);
+          ctx.lineTo(p.x, p.y + 5);
+          ctx.stroke();
         }
       });
 
       // Draw Enemies
       s.enemies.forEach(e => {
         ctx.shadowBlur = e.hitFlash > 0 ? perf.enemyGlow * 2 : perf.enemyGlow;
-        ctx.shadowColor = e.hitFlash > 0 ? '#fff' : e.color;
-        ctx.fillStyle = e.hitFlash > 0 ? '#fff' : e.color;
+        const frozen = s.freezeTimer > 0;
+        ctx.shadowColor = e.hitFlash > 0 ? '#fff' : frozen ? '#93c5fd' : e.color;
+        ctx.fillStyle = e.hitFlash > 0 ? '#fff' : frozen ? '#bfdbfe' : e.color;
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
 
@@ -781,9 +1105,16 @@ export default function App() {
           ctx.moveTo(e.x + Math.cos(angle) * e.radius, e.y + Math.sin(angle) * e.radius);
           ctx.lineTo(e.x + Math.cos(angle + 2.5) * e.radius, e.y + Math.sin(angle + 2.5) * e.radius);
           ctx.lineTo(e.x + Math.cos(angle - 2.5) * e.radius, e.y + Math.sin(angle - 2.5) * e.radius);
-        } else {
+        } else if (e.type === 'tank') {
           // Square Tank
           ctx.rect(e.x - e.radius, e.y - e.radius, e.radius*2, e.radius*2);
+        } else {
+          // Splitter
+          ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+          ctx.moveTo(e.x - e.radius, e.y);
+          ctx.lineTo(e.x + e.radius, e.y);
+          ctx.moveTo(e.x, e.y - e.radius);
+          ctx.lineTo(e.x, e.y + e.radius);
         }
         ctx.closePath();
         ctx.fill();
@@ -825,6 +1156,15 @@ export default function App() {
         ctx.beginPath();
         ctx.arc(core.x, core.y, CORE_RADIUS/2, 0, Math.PI * 2);
         ctx.fill();
+        if (s.shieldTimer > 0) {
+          ctx.strokeStyle = '#38bdf8';
+          ctx.shadowColor = '#38bdf8';
+          ctx.shadowBlur = 18;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(core.x, core.y, CORE_RADIUS + 9 + Math.sin(s.frames * 0.18) * 2, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
 
       // Draw Mace
@@ -944,6 +1284,31 @@ export default function App() {
         className="absolute top-0 left-0 w-full h-full block cursor-none touch-none"
       />
 
+      <button
+        onClick={toggleMute}
+        className="absolute bottom-4 right-4 z-30 inline-flex h-11 w-11 items-center justify-center rounded-lg border border-white/10 bg-gray-950/70 text-cyan-200 shadow-[0_0_18px_rgba(34,211,238,0.16)] backdrop-blur transition-colors hover:bg-cyan-950/70"
+        aria-label={isMuted ? 'Unmute audio' : 'Mute audio'}
+        title={isMuted ? 'Unmute audio' : 'Mute audio'}
+      >
+        {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+      </button>
+
+      <div className="pointer-events-none absolute left-1/2 top-5 z-40 flex w-[min(92vw,440px)] -translate-x-1/2 flex-col gap-3">
+        {celebrations.map((item) => (
+          <div
+            key={item.id}
+            className={`rounded-lg border px-4 py-3 text-center font-bold shadow-2xl backdrop-blur-md animate-pulse ${
+              item.tone === 'gold'
+                ? 'border-yellow-300/70 bg-yellow-950/80 text-yellow-100 shadow-yellow-500/20'
+                : 'border-cyan-300/60 bg-cyan-950/80 text-cyan-100 shadow-cyan-500/20'
+            }`}
+          >
+            <div className="text-xs uppercase tracking-widest opacity-80">{item.title}</div>
+            <div className="text-lg">{item.detail}</div>
+          </div>
+        ))}
+      </div>
+
       {/* --- UI HUD --- */}
       {gameState === 'playing' && (
         <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-start pointer-events-none z-10">
@@ -961,6 +1326,15 @@ export default function App() {
                 />
               ))}
             </div>
+            {activeEffects.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {activeEffects.map((effect) => (
+                  <div key={effect.label} className="rounded border border-cyan-400/40 bg-gray-950/70 px-2 py-1 text-xs font-bold text-cyan-100 shadow-[0_0_10px_rgba(34,211,238,0.2)]">
+                    {effect.label} {Math.ceil(effect.value / 60)}s
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           
           <div className="flex flex-col items-end gap-2 w-48">
@@ -1006,6 +1380,10 @@ export default function App() {
                     <div className="p-2 bg-gray-800 rounded text-yellow-400"><Zap size={16}/></div>
                     <span>Collect Orbs for Energy</span>
                 </div>
+                <div className="flex items-center gap-3">
+                    <div className="flex gap-1 p-2 bg-gray-800 rounded text-rose-400"><Bomb size={14}/><Snowflake size={14}/><Magnet size={14}/></div>
+                    <span>Bomb, Freeze, Magnet, Shield, and Giant pickups can drop</span>
+                </div>
                 <div className="flex items-center gap-3 pt-4 border-t border-gray-800">
                     <div className="px-3 py-1 bg-gray-800 rounded border border-gray-600 font-bold">CLICK</div>
                     <span className="text-white font-bold tracking-widest text-xs">Activate Overdrive (100% Energy)</span>
@@ -1027,6 +1405,16 @@ export default function App() {
                     <Trophy size={20}/>
                     <h2 className="text-xl font-bold tracking-widest">HALL OF FAME</h2>
                 </div>
+                <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-lg border border-gray-800 bg-gray-950/50 p-3">
+                    <div className="text-gray-500 uppercase tracking-widest">Local Best</div>
+                    <div className="text-lg font-black text-yellow-300">{localHighScore.toLocaleString()}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-800 bg-gray-950/50 p-3">
+                    <div className="text-gray-500 uppercase tracking-widest">Badges</div>
+                    <div className="text-lg font-black text-cyan-300">{Object.keys(achievements).length}/{ACHIEVEMENTS.length}</div>
+                  </div>
+                </div>
                 <div className="flex-1 space-y-2 overflow-y-auto max-h-64 pr-2">
                     {leaderboard.length > 0 ? leaderboard.map((entry, i) => (
                         <div key={i} className="flex justify-between items-center text-sm bg-gray-950/50 p-2 rounded border border-gray-800/50">
@@ -1039,6 +1427,19 @@ export default function App() {
                             Scanning satellites...
                         </div>
                     )}
+                </div>
+                <div className="mt-4 border-t border-gray-800 pt-3">
+                  <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-500">
+                    <Award size={14} />
+                    Local Achievements
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {ACHIEVEMENTS.slice(0, 6).map((item) => (
+                      <div key={item.id} title={item.desc} className={`truncate rounded border px-2 py-1 text-xs font-bold ${achievements[item.id] ? 'border-yellow-400/50 bg-yellow-950/40 text-yellow-200' : 'border-gray-800 bg-gray-950/40 text-gray-600'}`}>
+                        {item.title}
+                      </div>
+                    ))}
+                  </div>
                 </div>
             </div>
           </div>
@@ -1055,6 +1456,14 @@ export default function App() {
           </h2>
           <div className="text-2xl md:text-3xl text-white mb-8 font-bold tracking-widest">
             FINAL SCORE: <span className="text-cyan-400">{score.toLocaleString()}</span>
+          </div>
+          <div className="mb-6 flex gap-3 text-xs font-bold uppercase tracking-widest">
+            <div className="rounded-lg border border-yellow-400/30 bg-gray-950/50 px-4 py-2 text-yellow-200">
+              Local Best {localHighScore.toLocaleString()}
+            </div>
+            <div className="rounded-lg border border-cyan-400/30 bg-gray-950/50 px-4 py-2 text-cyan-200">
+              Badges {Object.keys(achievements).length}/{ACHIEVEMENTS.length}
+            </div>
           </div>
 
           <div className="w-full max-w-sm bg-gray-900/80 p-6 rounded-2xl border border-red-900/50 shadow-2xl mb-8">

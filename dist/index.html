@@ -1,23 +1,29 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CCYN6RV8HK"></script>
+    <!-- Google tag (gtag.js), disabled for local file and localhost runs -->
     <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
+      const isLocalRuntime = location.protocol === 'file:' || ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+      if (!isLocalRuntime) {
+        const gtagScript = document.createElement('script');
+        gtagScript.async = true;
+        gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-CCYN6RV8HK';
+        document.head.appendChild(gtagScript);
 
-      gtag('config', 'G-CCYN6RV8HK');
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-CCYN6RV8HK');
+      }
     </script>
 
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="./vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ORBITAL SMASH</title>
     <meta name="description" content="Swing your way to victory in this high-octane orbital combat game." />
-    <script type="module" crossorigin src="/orbital-smash/assets/index-CxAxT6-p.js"></script>
-    <link rel="stylesheet" crossorigin href="/orbital-smash/assets/index-B3x44x07.css">
+    <script type="module" crossorigin src="./assets/index-BTABf04f.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DSTiJA3_.css">
   </head>
   <body>
     <div id="root"></div>
