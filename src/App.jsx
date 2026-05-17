@@ -272,6 +272,7 @@ class AudioSys {
     this.enabled = false;
     this.muted = false;
     this.soundPack = 'classic';
+    this.noiseBuffer = null;
   }
 
   init() {
@@ -286,8 +287,17 @@ class AudioSys {
     this.musicGain.gain.value = 0.18;
     this.musicGain.connect(this.masterGain);
     this.masterGain.connect(this.ctx.destination);
+    this.noiseBuffer = this.createNoiseBuffer(1);
     if (this.ctx.state === 'suspended') this.ctx.resume();
     this.enabled = true;
+  }
+
+  createNoiseBuffer(duration) {
+    const bufferSize = Math.ceil(this.ctx.sampleRate * duration);
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    return buffer;
   }
 
   setMuted(muted) {
@@ -324,13 +334,8 @@ class AudioSys {
 
   playNoise(duration, vol) {
     if (!this.enabled || !this.ctx || this.muted) return;
-    const bufferSize = this.ctx.sampleRate * duration;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-    
     const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
+    noise.buffer = this.noiseBuffer ?? this.createNoiseBuffer(1);
     
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(vol, this.ctx.currentTime);
@@ -346,6 +351,7 @@ class AudioSys {
     gain.connect(this.masterGain);
     
     noise.start();
+    noise.stop(this.ctx.currentTime + duration);
   }
 
   playMusicNote(freq, duration, delay = 0, vol = 0.08) {
@@ -687,6 +693,8 @@ export default function App() {
           particleMultiplier: 0.42,
           particleCap: 70,
           textCap: 12,
+          particleBurstBudget: 34,
+          textBurstBudget: 5,
           pickupGlow: 6,
           enemyGlow: 6,
           ropeGlow: 6,
@@ -715,6 +723,8 @@ export default function App() {
           particleMultiplier: 1,
           particleCap: 220,
           textCap: 24,
+          particleBurstBudget: 90,
+          textBurstBudget: 10,
           pickupGlow: 10,
           enemyGlow: 10,
           ropeGlow: 10,
@@ -752,6 +762,9 @@ export default function App() {
       particles: [],
       pickups: [],
       texts: [], // floating combat text
+      particleBudget: performance.particleBurstBudget,
+      textBudget: performance.textBurstBudget,
+      impactSoundCooldown: 0,
       score: 0,
       health: 3,
       energy: 0,
@@ -1212,7 +1225,10 @@ export default function App() {
     const spawnParticles = (x, y, color, count, speedFactor = 1) => {
       const particleCount = Math.max(1, Math.floor(count * perf.particleMultiplier));
       const skipHeavyParticles = perf.quality >= 2;
-      for (let i = 0; i < particleCount; i++) {
+      const allowedCount = Math.min(particleCount, s.particleBudget);
+      if (allowedCount <= 0) return;
+      s.particleBudget -= allowedCount;
+      for (let i = 0; i < allowedCount; i++) {
         if (skipHeavyParticles && i % 2 === 1) continue;
         const angle = Math.random() * Math.PI * 2;
         const speed = Math.random() * 5 * speedFactor;
@@ -1232,6 +1248,8 @@ export default function App() {
     };
 
     const spawnFloatingText = (text, x, y, color) => {
+      if (s.textBudget <= 0) return;
+      s.textBudget--;
       s.texts.push({ text, x, y, life: 1.0, color, vy: -1 - Math.random() });
       if (s.texts.length > perf.textCap) {
         s.texts.splice(0, s.texts.length - perf.textCap);
@@ -1240,10 +1258,12 @@ export default function App() {
 
     const detonateBomb = (x, y) => {
       let destroyed = 0;
+      const blastRadiusSq = 310 * 310;
       for (let i = s.enemies.length - 1; i >= 0; i--) {
         const e = s.enemies[i];
-        const dist = Math.hypot(e.x - x, e.y - y);
-        if (dist < 310) {
+        const dx = e.x - x;
+        const dy = e.y - y;
+        if (dx * dx + dy * dy < blastRadiusSq) {
           s.enemies.splice(i, 1);
           destroyed++;
           spawnParticles(e.x, e.y, e.color, 12, 2);
@@ -1287,13 +1307,17 @@ export default function App() {
 
     const triggerSingularity = (x, y) => {
       let crushed = 0;
+      const pullRadiusSq = 420 * 420;
+      const crushRadiusSq = 260 * 260;
       for (let i = s.enemies.length - 1; i >= 0; i--) {
         const e = s.enemies[i];
-        const dist = Math.hypot(e.x - x, e.y - y);
-        if (dist < 420) {
+        const dx = e.x - x;
+        const dy = e.y - y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq < pullRadiusSq) {
           e.x += (x - e.x) * 0.72;
           e.y += (y - e.y) * 0.72;
-          if (dist < 260) {
+          if (distSq < crushRadiusSq) {
             s.enemies.splice(i, 1);
             crushed++;
             spawnParticles(e.x, e.y, '#c084fc', 16, 2);
@@ -1314,6 +1338,9 @@ export default function App() {
     // Main Update Function
     const update = () => {
       s.frames++;
+      s.particleBudget = perf.particleBurstBudget;
+      s.textBudget = perf.textBurstBudget;
+      if (s.impactSoundCooldown > 0) s.impactSoundCooldown--;
 
       // Hit-stop effect (pauses physics for dramatic impact)
       if (s.hitStop > 0) {
@@ -1518,12 +1545,13 @@ export default function App() {
         // Collision: Mace vs Enemy
         let mdx = mace.x - e.x;
         let mdy = mace.y - e.y;
-        let mDist = Math.hypot(mdx, mdy);
+        const maceHitRadius = activeMaceRadius + e.radius;
+        const maceDistSq = mdx * mdx + mdy * mdy;
 
         // Mace has a damage threshold based on speed. Overdrive always kills.
         let isLethalHit = s.isOverdrive || maceSpeed > 8; 
 
-        if (mDist < activeMaceRadius + e.radius) {
+        if (maceDistSq < maceHitRadius * maceHitRadius) {
           if (isLethalHit) {
             // Apply Damage
             e.hp--;
@@ -1573,7 +1601,10 @@ export default function App() {
               if (maceSpeed > 25 || s.isOverdrive) {
                 s.shake += 8;
                 s.hitStop = Math.max(1, Math.round(2 * perf.hitStopMultiplier)); // Pause for impact
-                audio.smash();
+                if (s.impactSoundCooldown <= 0) {
+                  audio.smash();
+                  s.impactSoundCooldown = 4;
+                }
               } else {
                 s.shake += 2;
                 audio.hit();
@@ -1597,9 +1628,10 @@ export default function App() {
         // Collision: Enemy vs Player Core
         let cdx = core.x - e.x;
         let cdy = core.y - e.y;
-        let cDist = Math.hypot(cdx, cdy);
+        const coreHitRadius = CORE_RADIUS + e.radius;
+        const coreDistSq = cdx * cdx + cdy * cdy;
         
-        if (cDist < CORE_RADIUS + e.radius && s.invulnTimer <= 0) {
+        if (coreDistSq < coreHitRadius * coreHitRadius && s.invulnTimer <= 0) {
           if (s.shieldTimer > 0) {
             s.shieldTimer = 0;
             s.invulnTimer = 40;
@@ -1981,14 +2013,14 @@ export default function App() {
       ctx.restore(); // Restore from Screen Shake
     };
 
-    // The Animation Loop
+    // Keep gameplay on a fixed 60 Hz clock so a slow renderer does not slow the game itself.
     let lastTime = window.performance.now();
     let accumulator = 0;
-    const mobileLoop = (time) => {
+    const gameLoop = (time) => {
       const deltaMs = Math.min(50, time - lastTime || FRAME_DURATION);
       lastTime = time;
       accumulator += deltaMs;
-      const maxSteps = 4;
+      const maxSteps = perf.isMobile ? 4 : 5;
       let steps = 0;
 
       while (accumulator >= FRAME_DURATION && steps < maxSteps) {
@@ -1997,24 +2029,16 @@ export default function App() {
         steps++;
       }
 
+      // Drop runaway backlog instead of turning a hitch into several seconds of catch-up.
       if (steps === maxSteps && accumulator > FRAME_DURATION * 2) {
         accumulator = FRAME_DURATION;
       }
 
       draw();
       updateQuality(deltaMs);
-      reqRef.current = requestAnimationFrame(mobileLoop);
+      reqRef.current = requestAnimationFrame(gameLoop);
     };
-    let lastDesktopTime = window.performance.now();
-    const desktopLoop = (time) => {
-      const deltaMs = Math.min(50, time - lastDesktopTime || FRAME_DURATION);
-      lastDesktopTime = time;
-      update();
-      draw();
-      updateQuality(deltaMs);
-      reqRef.current = requestAnimationFrame(desktopLoop);
-    };
-    reqRef.current = requestAnimationFrame(perf.isMobile ? mobileLoop : desktopLoop);
+    reqRef.current = requestAnimationFrame(gameLoop);
 
     return () => {
       window.removeEventListener('resize', handleResize);
