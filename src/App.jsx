@@ -2488,16 +2488,29 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 text-xs font-bold uppercase tracking-widest">
-                <button onClick={() => setShowKey(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-cyan-400 hover:text-cyan-200">
-                  Key
-                </button>
-                <button onClick={() => setShowUnlocks(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-yellow-300 hover:text-yellow-100">
-                  Unlocks
-                </button>
-                <button onClick={() => setShowLeaderboard(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-yellow-300 hover:text-yellow-100">
-                  Board
-                </button>
+              <div className="flex min-w-0 flex-col gap-2">
+                <div className="grid grid-cols-3 gap-2 text-xs font-bold uppercase tracking-widest">
+                  <button onClick={() => setShowKey(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-cyan-400 hover:text-cyan-200">
+                    Key
+                  </button>
+                  <button onClick={() => setShowUnlocks(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-yellow-300 hover:text-yellow-100">
+                    Unlocks
+                  </button>
+                  <button onClick={() => setShowLeaderboard(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-yellow-300 hover:text-yellow-100">
+                    Board
+                  </button>
+                </div>
+                <div className="text-center text-[10px] font-black uppercase tracking-widest text-gray-500 md:text-right">
+                  Created by{' '}
+                  <a
+                    href="https://discord.gg/6BJTUpDSsE"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-cyan-200 transition-colors hover:text-white"
+                  >
+                    @jakedoesdev
+                  </a>
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-4 gap-1 rounded-lg border border-gray-800 bg-gray-950/70 p-1 text-[10px] font-black uppercase tracking-widest sm:hidden">
