@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Award, Bomb, Eye, Home, Magnet, Music, Palette, Play, RotateCcw, Send, Shield, Snowflake, Sparkles, Trophy, Volume2, VolumeX, Zap } from 'lucide-react';
+import orbitalSmashVideo from './OrbitalSmash-preview.mp4';
 
 // --- GAME CONSTANTS ---
 const NUM_NODES = 7;           // Number of segments in the chain
@@ -462,6 +463,9 @@ export default function App() {
   const [showKey, setShowKey] = useState(false);
   const [showUnlocks, setShowUnlocks] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showVideoPlayer, setShowVideoPlayer] = useState(false);
+  const [shouldLoadPreviewVideo, setShouldLoadPreviewVideo] = useState(false);
+  const [previewVideoStatus, setPreviewVideoStatus] = useState('idle');
   const [tutorialStep, setTutorialStep] = useState(0);
   const [graphicsMode, setGraphicsMode] = useState(() => localStorage.getItem(GRAPHICS_KEY) || 'auto');
   const [graphicsQuality, setGraphicsQuality] = useState(0);
@@ -669,6 +673,34 @@ export default function App() {
         fetchLeaderboard();
     }
   }, [gameState]);
+
+  useEffect(() => {
+    if (gameState !== 'menu' || shouldLoadPreviewVideo) return;
+
+    const connection = navigator.connection || navigator.webkitConnection || navigator.mozConnection;
+    if (connection?.saveData) return;
+
+    let idleId = null;
+    const timerId = window.setTimeout(() => {
+      const loadPreview = () => {
+        setShouldLoadPreviewVideo(true);
+        setPreviewVideoStatus('loading');
+      };
+
+      if ('requestIdleCallback' in window) {
+        idleId = window.requestIdleCallback(loadPreview, { timeout: 1200 });
+      } else {
+        loadPreview();
+      }
+    }, 900);
+
+    return () => {
+      window.clearTimeout(timerId);
+      if (idleId !== null && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleId);
+      }
+    };
+  }, [gameState, shouldLoadPreviewVideo]);
 
   // Initialize or reset game engine state
   const initEngine = () => {
@@ -2282,6 +2314,37 @@ export default function App() {
         </div>
       )}
 
+      {showVideoPlayer && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/90 p-4 backdrop-blur-md">
+          <div className="w-full max-w-4xl overflow-hidden rounded-lg border border-cyan-300/30 bg-gray-950 shadow-[0_0_55px_rgba(34,211,238,0.18)]">
+            <div className="flex items-center justify-between gap-4 border-b border-gray-800 px-4 py-3">
+              <div className="text-xs font-black uppercase tracking-widest text-cyan-200">
+                Gameplay Preview
+              </div>
+              <button
+                onClick={() => setShowVideoPlayer(false)}
+                className="rounded border border-gray-700 bg-gray-950 px-3 py-2 text-xs font-bold uppercase tracking-widest text-gray-300 transition-colors hover:border-cyan-300 hover:text-cyan-100"
+              >
+                Close
+              </button>
+            </div>
+            <video
+              className="aspect-video w-full bg-black object-contain"
+              src={shouldLoadPreviewVideo ? orbitalSmashVideo : undefined}
+              autoPlay
+              muted
+              loop
+              playsInline
+              controls
+              preload="metadata"
+              onLoadStart={() => setPreviewVideoStatus((status) => status === 'ready' ? 'ready' : 'loading')}
+              onCanPlay={() => setPreviewVideoStatus('ready')}
+              onWaiting={() => setPreviewVideoStatus('loading')}
+            />
+          </div>
+        </div>
+      )}
+
       {showTutorial && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/90 p-4 backdrop-blur-md">
           <div className="grid max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-cyan-400/30 bg-gray-900 shadow-[0_0_55px_rgba(34,211,238,0.18)] md:grid-cols-[1.35fr_0.9fr]">
@@ -2469,9 +2532,43 @@ export default function App() {
                 <div className="max-w-md text-lg font-bold text-cyan-50 md:text-2xl">
                   Swing the chain. Build speed. Smash the swarm.
                 </div>
-                <div className="rounded border border-yellow-300/30 bg-yellow-950/40 px-3 py-2 text-xs font-bold uppercase tracking-widest text-yellow-100">
-                  Overdrive at 100%
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShouldLoadPreviewVideo(true);
+                    setPreviewVideoStatus((status) => status === 'ready' ? 'ready' : 'loading');
+                    setShowVideoPlayer(true);
+                  }}
+                  className="group relative aspect-video w-40 overflow-hidden rounded-lg border border-cyan-300/40 bg-gray-950 shadow-[0_0_24px_rgba(34,211,238,0.18)] transition-transform hover:scale-[1.02] hover:border-cyan-200 sm:w-48"
+                  aria-label="Expand gameplay preview video"
+                >
+                  {shouldLoadPreviewVideo ? (
+                    <video
+                      className="h-full w-full object-cover opacity-90 transition-opacity group-hover:opacity-100"
+                      src={orbitalSmashVideo}
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      preload="metadata"
+                      onLoadStart={() => setPreviewVideoStatus((status) => status === 'ready' ? 'ready' : 'loading')}
+                      onCanPlay={() => setPreviewVideoStatus('ready')}
+                      onWaiting={() => setPreviewVideoStatus('loading')}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_50%_40%,rgba(34,211,238,0.22),rgba(3,7,18,1)_68%)]">
+                      <Play size={28} className="text-cyan-100" fill="currentColor" />
+                    </div>
+                  )}
+                  {previewVideoStatus !== 'ready' && (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-gray-950/35 text-[10px] font-black uppercase tracking-widest text-cyan-100">
+                      {shouldLoadPreviewVideo ? 'Loading' : 'Loading Soon'}
+                    </div>
+                  )}
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-gray-950 via-gray-950/70 to-transparent px-2 pb-2 pt-6 text-right text-[10px] font-black uppercase tracking-widest text-cyan-100">
+                    Preview
+                  </div>
+                </button>
               </div>
             </div>
 
