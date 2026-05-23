@@ -2539,7 +2539,7 @@ export default function App() {
                     setPreviewVideoStatus((status) => status === 'ready' ? 'ready' : 'loading');
                     setShowVideoPlayer(true);
                   }}
-                  className="group relative aspect-video w-40 overflow-hidden rounded-lg border border-cyan-300/40 bg-gray-950 shadow-[0_0_24px_rgba(34,211,238,0.18)] transition-transform hover:scale-[1.02] hover:border-cyan-200 sm:w-48"
+                  className="group relative aspect-video w-72 max-w-[44vw] overflow-hidden rounded-lg border border-cyan-300/40 bg-gray-950 shadow-[0_0_24px_rgba(34,211,238,0.18)] transition-transform hover:scale-[1.02] hover:border-cyan-200 sm:w-96"
                   aria-label="Expand gameplay preview video"
                 >
                   {shouldLoadPreviewVideo ? (
