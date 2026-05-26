@@ -455,6 +455,7 @@ export default function App() {
   const [playerName, setPlayerName] = useState(() => sanitizePlayerName(localStorage.getItem(PLAYER_NAME_KEY) || ""));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [leaderboardSubmitStatus, setLeaderboardSubmitStatus] = useState('idle');
+  const [pendingLeaderboardScore, setPendingLeaderboardScore] = useState(null);
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem(MUTE_KEY) === 'true');
   const [localHighScore, setLocalHighScore] = useState(() => Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0);
   const [achievements, setAchievements] = useState(() => readStoredJson(ACHIEVEMENTS_KEY, {}));
@@ -697,8 +698,15 @@ export default function App() {
   };
 
   const confirmName = ({ play = false } = {}) => {
+    const submittedName = sanitizePlayerName(playerName).trim();
     if (!savePlayerName()) return;
     setShowNamePrompt(false);
+    if (pendingLeaderboardScore && !isLocalMode) {
+      const scoreToSubmit = pendingLeaderboardScore;
+      setPendingLeaderboardScore(null);
+      submitLeaderboardScore(scoreToSubmit, submittedName);
+      return;
+    }
     if (play) {
       startGame(true);
     }
@@ -718,12 +726,6 @@ export default function App() {
         fetchLeaderboard();
     }
   }, [gameState]);
-
-  useEffect(() => {
-    if (gameState === 'menu' && !selectedPlayerName) {
-      setShowNamePrompt(true);
-    }
-  }, [gameState, selectedPlayerName]);
 
   useEffect(() => {
     if (gameState !== 'menu' || shouldLoadPreviewVideo) return;
@@ -893,11 +895,6 @@ export default function App() {
   };
 
   const startGame = (skipNamePrompt = false) => {
-    if (!skipNamePrompt && !selectedPlayerName) {
-      setShowNamePrompt(true);
-      return;
-    }
-
     beginGame();
   };
 
@@ -1790,8 +1787,15 @@ export default function App() {
               checkAchievements({ didSetHighScore: true, score: s.score });
               audio.achievement();
             }
-            if (didSetDeviceHighScore && s.playerName && !isLocalMode) {
-              submitLeaderboardScore(s.score, s.playerName);
+            if (didSetDeviceHighScore && !isLocalMode) {
+              if (s.playerName) {
+                submitLeaderboardScore(s.score, s.playerName);
+              } else {
+                setPendingLeaderboardScore(s.score);
+                setShowNamePrompt(true);
+              }
+            } else if (!s.playerName) {
+              setShowNamePrompt(true);
             }
             audio.stopMusic();
             setScore(s.score);
@@ -2194,10 +2198,12 @@ export default function App() {
             <div className="mb-5 border-b border-gray-800 pb-4">
               <div className="text-xs font-black uppercase tracking-[0.32em] text-cyan-300">Player callsign</div>
               <h2 className="mt-2 text-3xl font-black tracking-tight text-white">
-                {selectedPlayerName ? 'Change Your Name' : 'Choose Your Name'}
+                {pendingLeaderboardScore ? 'Name This Run' : selectedPlayerName ? 'Change Your Name' : 'Choose Your Name'}
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-gray-400">
-                New device-best runs submit automatically with this name.
+                {pendingLeaderboardScore
+                  ? `Submit ${pendingLeaderboardScore.toLocaleString()} points to the leaderboard.`
+                  : 'New device-best runs submit automatically with this name.'}
               </p>
             </div>
 
@@ -2217,7 +2223,7 @@ export default function App() {
                 disabled={!playerName.trim()}
                 className="rounded-lg bg-cyan-600 px-4 py-3 text-sm font-black uppercase tracking-widest text-white transition-colors hover:bg-cyan-500 disabled:bg-gray-800 disabled:text-gray-500"
               >
-                Save + Play
+                {pendingLeaderboardScore ? 'Save + Submit' : 'Save + Play'}
               </button>
               <button
                 type="submit"
