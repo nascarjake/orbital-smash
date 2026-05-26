@@ -18,6 +18,7 @@ const LOADOUT_KEY = 'orbital_smash_loadout';
 const LOCAL_SCORES_KEY = 'orbital_smash_local_scores';
 const MUTE_KEY = 'orbital_smash_muted';
 const GRAPHICS_KEY = 'orbital_smash_graphics';
+const PLAYER_NAME_KEY = 'orbital_smash_name';
 
 const DREAMLO_PUBLIC = "69f664cb8f40bb1068bd441a";
 const DREAMLO_PRIVATE = "qJcEBUUmAE6ApG2ZQjVRiw4nBSAtJFnUGNixUKRstFdA";
@@ -224,6 +225,8 @@ const readStoredJson = (key, fallback) => {
     return fallback;
   }
 };
+
+const sanitizePlayerName = (name) => String(name || '').toUpperCase().replace(/[^A-Z0-9 _-]/g, '').slice(0, 12);
 
 const normalizeLocalScores = (scores) => (
   Array.isArray(scores)
@@ -449,8 +452,9 @@ export default function App() {
   const [energy, setEnergy] = useState(0);
   const [leaderboard, setLeaderboard] = useState([]);
   const [localScores, setLocalScores] = useState(() => normalizeLocalScores(readStoredJson(LOCAL_SCORES_KEY, [])));
-  const [playerName, setPlayerName] = useState(() => localStorage.getItem('orbital_smash_name') || "");
+  const [playerName, setPlayerName] = useState(() => sanitizePlayerName(localStorage.getItem(PLAYER_NAME_KEY) || ""));
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [leaderboardSubmitStatus, setLeaderboardSubmitStatus] = useState('idle');
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem(MUTE_KEY) === 'true');
   const [localHighScore, setLocalHighScore] = useState(() => Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0);
   const [achievements, setAchievements] = useState(() => readStoredJson(ACHIEVEMENTS_KEY, {}));
@@ -463,6 +467,7 @@ export default function App() {
   const [showKey, setShowKey] = useState(false);
   const [showUnlocks, setShowUnlocks] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
   const [shouldLoadPreviewVideo, setShouldLoadPreviewVideo] = useState(false);
   const [previewVideoStatus, setPreviewVideoStatus] = useState('idle');
@@ -485,14 +490,27 @@ export default function App() {
     }, 3400);
   };
 
-  const recordLocalScore = (finalScore) => {
+  const updatePlayerName = (value) => {
+    setPlayerName(sanitizePlayerName(value));
+    setLeaderboardSubmitStatus('idle');
+  };
+
+  const savePlayerName = () => {
+    const nextName = sanitizePlayerName(playerName).trim();
+    if (!nextName) return false;
+    setPlayerName(nextName);
+    localStorage.setItem(PLAYER_NAME_KEY, nextName);
+    return true;
+  };
+
+  const recordLocalScore = (finalScore, scoreName = playerName.trim() || 'LOCAL') => {
     if (finalScore <= 0) return;
 
     setLocalScores((current) => {
       const next = normalizeLocalScores([
         ...current,
         {
-          name: playerName.trim() || 'LOCAL',
+          name: scoreName || 'LOCAL',
           score: finalScore,
           date: Date.now(),
         },
@@ -638,30 +656,57 @@ export default function App() {
     } catch (e) { console.error("Leaderboard fetch failed", e); }
   };
 
-  const submitScore = async () => {
-    if (!playerName.trim() || isSubmitting) return;
+  const submitLeaderboardScore = async (finalScore, name, { returnToMenu = false } = {}) => {
+    const submittedName = sanitizePlayerName(name).trim();
+    if (!submittedName || isSubmitting || finalScore <= 0) return false;
     setIsSubmitting(true);
-    localStorage.setItem('orbital_smash_name', playerName);
+    setLeaderboardSubmitStatus('submitting');
+    localStorage.setItem(PLAYER_NAME_KEY, submittedName);
     if (isLocalMode) {
-      setGameState('menu');
+      setLeaderboardSubmitStatus('local');
+      if (returnToMenu) setGameState('menu');
       setIsSubmitting(false);
-      return;
+      return false;
     }
 
     try {
       await requestDreamlo(
-        `${DREAMLO_PRIVATE}/add/${encodeURIComponent(playerName.trim())}/${score}`,
+        `${DREAMLO_PRIVATE}/add/${encodeURIComponent(submittedName)}/${finalScore}`,
         { expectJson: false }
       );
-      setGameState('menu');
+      setLeaderboardSubmitStatus('submitted');
+      if (returnToMenu) setGameState('menu');
       await new Promise(r => setTimeout(r, 600));
       await fetchLeaderboard();
-    } catch (e) { console.error("Score submission failed", e); }
-    setIsSubmitting(false);
+      return true;
+    } catch (e) {
+      setLeaderboardSubmitStatus('failed');
+      console.error("Score submission failed", e);
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const submitScore = async () => {
+    if (!savePlayerName()) {
+      setShowNamePrompt(true);
+      return;
+    }
+    await submitLeaderboardScore(score, playerName, { returnToMenu: false });
+  };
+
+  const confirmName = ({ play = false } = {}) => {
+    if (!savePlayerName()) return;
+    setShowNamePrompt(false);
+    if (play) {
+      startGame(true);
+    }
   };
 
   const leaderboardRows = isLocalMode ? localScores : leaderboard;
-  const playerLookupName = playerName.trim().toLowerCase();
+  const selectedPlayerName = playerName.trim();
+  const playerLookupName = selectedPlayerName.toLowerCase();
   const playerLeaderboardIndex = leaderboardRows.findIndex((entry) => {
     if (playerLookupName && String(entry.name || '').trim().toLowerCase() === playerLookupName) return true;
     return isLocalMode && localHighScore > 0 && Number(entry.score) === localHighScore;
@@ -673,6 +718,12 @@ export default function App() {
         fetchLeaderboard();
     }
   }, [gameState]);
+
+  useEffect(() => {
+    if (gameState === 'menu' && !selectedPlayerName) {
+      setShowNamePrompt(true);
+    }
+  }, [gameState, selectedPlayerName]);
 
   useEffect(() => {
     if (gameState !== 'menu' || shouldLoadPreviewVideo) return;
@@ -788,6 +839,7 @@ export default function App() {
       activePointerId: null,
       performance,
       loadout: { ...loadout },
+      playerName: selectedPlayerName,
       nodes,
       maceHistory: [],
       enemies: [],
@@ -831,12 +883,22 @@ export default function App() {
     setActiveEffects([]);
   };
 
-  const startGame = () => {
+  const beginGame = () => {
+    setLeaderboardSubmitStatus('idle');
     audio.init();
     audio.setMuted(isMuted);
     audio.startMusic();
     initEngine();
     setGameState('playing');
+  };
+
+  const startGame = (skipNamePrompt = false) => {
+    if (!skipNamePrompt && !selectedPlayerName) {
+      setShowNamePrompt(true);
+      return;
+    }
+
+    beginGame();
   };
 
   useEffect(() => {
@@ -1718,14 +1780,18 @@ export default function App() {
               continue;
             }
 
-            recordLocalScore(s.score);
+            recordLocalScore(s.score, s.playerName || 'LOCAL');
             const storedHighScore = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
-            if (s.score > storedHighScore) {
+            const didSetDeviceHighScore = s.score > storedHighScore;
+            if (didSetDeviceHighScore) {
               localStorage.setItem(HIGH_SCORE_KEY, String(s.score));
               setLocalHighScore(s.score);
               triggerCelebration('New high score', `${s.score.toLocaleString()} points`, 'gold');
               checkAchievements({ didSetHighScore: true, score: s.score });
               audio.achievement();
+            }
+            if (didSetDeviceHighScore && s.playerName && !isLocalMode) {
+              submitLeaderboardScore(s.score, s.playerName);
             }
             audio.stopMusic();
             setScore(s.score);
@@ -2116,6 +2182,65 @@ export default function App() {
         ))}
       </div>
 
+      {showNamePrompt && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/90 p-4 backdrop-blur-md">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              confirmName();
+            }}
+            className="w-full max-w-md rounded-lg border border-cyan-300/35 bg-gray-900 p-6 shadow-[0_0_55px_rgba(34,211,238,0.18)]"
+          >
+            <div className="mb-5 border-b border-gray-800 pb-4">
+              <div className="text-xs font-black uppercase tracking-[0.32em] text-cyan-300">Player callsign</div>
+              <h2 className="mt-2 text-3xl font-black tracking-tight text-white">
+                {selectedPlayerName ? 'Change Your Name' : 'Choose Your Name'}
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-gray-400">
+                New device-best runs submit automatically with this name.
+              </p>
+            </div>
+
+            <input
+              autoFocus
+              type="text"
+              value={playerName}
+              onChange={(event) => updatePlayerName(event.target.value)}
+              placeholder="PLAYER NAME"
+              className="w-full rounded-lg border border-gray-700 bg-gray-950 px-4 py-4 text-center text-2xl font-black uppercase tracking-widest text-cyan-200 outline-none transition-colors placeholder:text-gray-700 focus:border-cyan-300"
+            />
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => confirmName({ play: true })}
+                disabled={!playerName.trim()}
+                className="rounded-lg bg-cyan-600 px-4 py-3 text-sm font-black uppercase tracking-widest text-white transition-colors hover:bg-cyan-500 disabled:bg-gray-800 disabled:text-gray-500"
+              >
+                Save + Play
+              </button>
+              <button
+                type="submit"
+                disabled={!playerName.trim()}
+                className="rounded-lg border border-gray-700 bg-gray-950 px-4 py-3 text-sm font-bold uppercase tracking-widest text-gray-200 transition-colors hover:border-cyan-300 hover:text-cyan-100 disabled:text-gray-600"
+              >
+                Save Name
+              </button>
+            </div>
+
+            {selectedPlayerName && (
+              <button
+                type="button"
+                onClick={() => setShowNamePrompt(false)}
+                className="mt-3 w-full rounded-lg border border-gray-800 bg-gray-950/60 px-4 py-3 text-xs font-bold uppercase tracking-widest text-gray-500 transition-colors hover:text-gray-200"
+              >
+                Keep {selectedPlayerName}
+              </button>
+            )}
+          </form>
+        </div>
+      )}
+
       {showBadges && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/85 p-4 backdrop-blur-md">
           <div className="max-h-[86vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-cyan-400/30 bg-gray-900 p-6 shadow-[0_0_45px_rgba(34,211,238,0.18)]">
@@ -2468,6 +2593,9 @@ export default function App() {
               </div>
               <div className="hidden flex-col items-end gap-2 sm:flex">
                 <div className="flex gap-2 text-xs font-bold uppercase tracking-widest text-gray-400">
+                  <button onClick={() => setShowNamePrompt(true)} className="rounded border border-cyan-400/30 bg-cyan-950/30 px-3 py-2 text-cyan-100 hover:border-cyan-300 hover:text-white">
+                    {selectedPlayerName ? `Callsign ${selectedPlayerName}` : 'Select callsign'}
+                  </button>
                   <button onClick={() => setShowBadges(true)} className="rounded border border-gray-700 bg-gray-950/70 px-3 py-2 hover:border-cyan-400 hover:text-cyan-200">
                     Badges {Object.keys(achievements).length}/{ACHIEVEMENTS.length}
                   </button>
@@ -2586,6 +2714,9 @@ export default function App() {
               </div>
 
               <div className="flex min-w-0 flex-col gap-2">
+                <button onClick={() => setShowNamePrompt(true)} className="rounded-lg border border-cyan-400/30 bg-cyan-950/30 px-3 py-2 text-xs font-black uppercase tracking-widest text-cyan-100 transition-colors hover:border-cyan-300 hover:text-white sm:hidden">
+                  {selectedPlayerName ? `Callsign ${selectedPlayerName}` : 'Select callsign'}
+                </button>
                 <div className="grid grid-cols-3 gap-2 text-xs font-bold uppercase tracking-widest">
                   <button onClick={() => setShowKey(true)} className="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-3 text-gray-200 transition-colors hover:border-cyan-400 hover:text-cyan-200">
                     Key
@@ -2651,12 +2782,12 @@ export default function App() {
 
           {!isLocalMode && (
           <div className="w-full max-w-sm bg-gray-900/80 p-6 rounded-2xl border border-red-900/50 shadow-2xl mb-8">
-            <label className="block text-xs text-gray-400 uppercase tracking-widest mb-2 font-bold">Transmit Identity</label>
+            <label className="block text-xs text-gray-400 uppercase tracking-widest mb-2 font-bold">Leaderboard Callsign</label>
             <div className="flex gap-2">
                 <input
                     type="text"
                     value={playerName}
-                    onChange={(e) => setPlayerName(e.target.value.toUpperCase().slice(0, 12))}
+                    onChange={(e) => updatePlayerName(e.target.value)}
                     placeholder="PLAYER NAME"
                     className="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-4 py-3 text-cyan-400 focus:outline-none focus:border-cyan-500 font-bold placeholder:text-gray-800"
                 />
@@ -2667,6 +2798,12 @@ export default function App() {
                 >
                     {isSubmitting ? "SENDING..." : <><Send size={18} /> SUBMIT</>}
                 </button>
+            </div>
+            <div className="mt-3 text-xs font-bold uppercase tracking-widest text-gray-500">
+              {leaderboardSubmitStatus === 'submitted' && 'Submitted to leaderboard'}
+              {leaderboardSubmitStatus === 'submitting' && 'Submitting device-best score'}
+              {leaderboardSubmitStatus === 'failed' && 'Submit failed. You can try again.'}
+              {leaderboardSubmitStatus === 'idle' && 'New device-best runs submit automatically.'}
             </div>
           </div>
           )}
