@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Award, Bomb, Eye, Home, Magnet, Music, Palette, Play, RotateCcw, Send, Shield, Snowflake, Sparkles, Trophy, Volume2, VolumeX, Zap } from 'lucide-react';
 import orbitalSmashVideo from './OrbitalSmash-preview.mp4';
+import backgroundMusic from './Mile Long - 1.mp3';
 
 // --- GAME CONSTANTS ---
 const NUM_NODES = 7;           // Number of segments in the chain
@@ -17,6 +18,7 @@ const UNLOCKS_KEY = 'orbital_smash_unlocks';
 const LOADOUT_KEY = 'orbital_smash_loadout';
 const LOCAL_SCORES_KEY = 'orbital_smash_local_scores';
 const MUTE_KEY = 'orbital_smash_muted';
+const VOLUME_KEY = 'orbital_smash_volume';
 const GRAPHICS_KEY = 'orbital_smash_graphics';
 const PLAYER_NAME_KEY = 'orbital_smash_name';
 
@@ -275,6 +277,9 @@ class AudioSys {
     this.musicTimer = null;
     this.enabled = false;
     this.muted = false;
+    this.bgm = null;
+    this.musicSrc = null;
+    this.musicVolume = 0.22;
     this.soundPack = 'classic';
     this.noiseBuffer = null;
   }
@@ -292,6 +297,7 @@ class AudioSys {
     this.musicGain.connect(this.masterGain);
     this.masterGain.connect(this.ctx.destination);
     this.noiseBuffer = this.createNoiseBuffer(1);
+    this.applyMusicSettings();
     if (this.ctx.state === 'suspended') this.ctx.resume();
     this.enabled = true;
   }
@@ -309,6 +315,27 @@ class AudioSys {
     if (this.masterGain && this.ctx) {
       this.masterGain.gain.setTargetAtTime(muted ? 0 : 0.3, this.ctx.currentTime, 0.03);
     }
+    this.applyMusicSettings();
+  }
+
+  setMusicSource(src) {
+    if (this.musicSrc === src && this.bgm) return;
+    this.musicSrc = src;
+    this.bgm = new Audio(src);
+    this.bgm.loop = true;
+    this.bgm.preload = 'auto';
+    this.applyMusicSettings();
+  }
+
+  setMusicVolume(volume) {
+    this.musicVolume = Math.max(0, Math.min(1, Number(volume) || 0));
+    this.applyMusicSettings();
+  }
+
+  applyMusicSettings() {
+    if (!this.bgm) return;
+    this.bgm.volume = this.musicVolume;
+    this.bgm.muted = this.muted;
   }
 
   setSoundPack(soundPack) {
@@ -358,49 +385,15 @@ class AudioSys {
     noise.stop(this.ctx.currentTime + duration);
   }
 
-  playMusicNote(freq, duration, delay = 0, vol = 0.08) {
-    if (!this.enabled || !this.ctx || this.muted || !this.musicGain) return;
-    const now = this.ctx.currentTime + delay;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    const filter = this.ctx.createBiquadFilter();
-
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(freq, now);
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(1200, now);
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(vol, now + 0.04);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.musicGain);
-    osc.start(now);
-    osc.stop(now + duration + 0.04);
-  }
-
   startMusic() {
-    if (!this.enabled || this.musicTimer) return;
-    const notes = [110, 146.83, 164.81, 220, 196, 164.81, 146.83, 123.47];
-    let step = 0;
-    const playBar = () => {
-      if (!this.enabled || this.muted) return;
-      const root = notes[step % notes.length];
-      this.playMusicNote(root, 0.42, 0, 0.07);
-      this.playMusicNote(root * 2, 0.18, 0.18, 0.04);
-      this.playMusicNote(root * 1.5, 0.16, 0.36, 0.035);
-      step++;
-    };
-    playBar();
-    this.musicTimer = window.setInterval(playBar, 520);
+    if (!this.bgm || this.muted) return;
+    this.applyMusicSettings();
+    this.bgm.play().catch(() => {});
   }
 
   stopMusic() {
-    if (this.musicTimer) {
-      window.clearInterval(this.musicTimer);
-      this.musicTimer = null;
-    }
+    if (!this.bgm) return;
+    this.bgm.pause();
   }
 
   hit() { this.playTone(200, 'square', 0.1, 0.4); }
@@ -457,6 +450,10 @@ export default function App() {
   const [leaderboardSubmitStatus, setLeaderboardSubmitStatus] = useState('idle');
   const [pendingLeaderboardScore, setPendingLeaderboardScore] = useState(null);
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem(MUTE_KEY) === 'true');
+  const [musicVolume, setMusicVolume] = useState(() => {
+    const stored = Number(localStorage.getItem(VOLUME_KEY));
+    return Number.isFinite(stored) ? Math.max(0, Math.min(1, stored)) : 0.22;
+  });
   const [localHighScore, setLocalHighScore] = useState(() => Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0);
   const [achievements, setAchievements] = useState(() => readStoredJson(ACHIEVEMENTS_KEY, {}));
   const [unlocks, setUnlocks] = useState(() => readStoredJson(UNLOCKS_KEY, {}));
@@ -603,6 +600,18 @@ export default function App() {
   }, [loadout.sound_glass, unlocks.sound_glass]);
 
   useEffect(() => {
+    audio.setMusicSource(backgroundMusic);
+  }, []);
+
+  useEffect(() => {
+    audio.setMuted(isMuted);
+  }, [isMuted]);
+
+  useEffect(() => {
+    audio.setMusicVolume(musicVolume);
+  }, [musicVolume]);
+
+  useEffect(() => {
     if (!showTutorial) return;
 
     const id = window.setInterval(() => {
@@ -635,6 +644,44 @@ export default function App() {
       audio.startMusic();
     }
   };
+
+  const changeMusicVolume = (value) => {
+    const next = Math.max(0, Math.min(1, Number(value)));
+    setMusicVolume(next);
+    localStorage.setItem(VOLUME_KEY, String(next));
+    audio.setMusicVolume(next);
+    if (isMuted && next > 0) {
+      setIsMuted(false);
+      localStorage.setItem(MUTE_KEY, 'false');
+      audio.setMuted(false);
+    }
+    audio.init();
+    audio.startMusic();
+  };
+
+  const AudioControls = ({ compact = false }) => (
+    <div className={`flex items-center gap-2 rounded-lg border border-white/10 bg-gray-950/70 p-2 shadow-[0_0_18px_rgba(34,211,238,0.12)] backdrop-blur ${compact ? 'w-full' : 'w-56'}`}>
+      <button
+        type="button"
+        onClick={toggleMute}
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-gray-700 bg-gray-950 text-cyan-200 transition-colors hover:border-cyan-300 hover:text-white"
+        aria-label={isMuted ? 'Unmute audio' : 'Mute audio'}
+        title={isMuted ? 'Unmute audio' : 'Mute audio'}
+      >
+        {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+      </button>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value={isMuted ? 0 : musicVolume}
+        onChange={(event) => changeMusicVolume(event.target.value)}
+        className="h-2 min-w-0 flex-1 accent-cyan-300"
+        aria-label="Music volume"
+      />
+    </div>
+  );
 
   const setGraphics = (mode) => {
     setGraphicsMode(mode);
@@ -1797,7 +1844,6 @@ export default function App() {
             } else if (!s.playerName) {
               setShowNamePrompt(true);
             }
-            audio.stopMusic();
             setScore(s.score);
             setGameState('gameover');
           }
@@ -2161,14 +2207,16 @@ export default function App() {
         className="absolute top-0 left-0 w-full h-full block cursor-none touch-none"
       />
 
-      <button
-        onClick={toggleMute}
-        className="absolute bottom-4 right-4 z-30 inline-flex h-11 w-11 items-center justify-center rounded-lg border border-white/10 bg-gray-950/70 text-cyan-200 shadow-[0_0_18px_rgba(34,211,238,0.16)] backdrop-blur transition-colors hover:bg-cyan-950/70"
-        aria-label={isMuted ? 'Unmute audio' : 'Mute audio'}
-        title={isMuted ? 'Unmute audio' : 'Mute audio'}
-      >
-        {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-      </button>
+      {gameState === 'playing' && (
+        <button
+          onClick={toggleMute}
+          className="absolute bottom-4 right-4 z-30 inline-flex h-11 w-11 items-center justify-center rounded-lg border border-white/10 bg-gray-950/70 text-cyan-200 shadow-[0_0_18px_rgba(34,211,238,0.16)] backdrop-blur transition-colors hover:bg-cyan-950/70"
+          aria-label={isMuted ? 'Unmute audio' : 'Mute audio'}
+          title={isMuted ? 'Unmute audio' : 'Mute audio'}
+        >
+          {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+        </button>
+      )}
 
       <div className="pointer-events-none absolute left-1/2 top-5 z-40 flex w-[min(92vw,440px)] -translate-x-1/2 flex-col gap-3">
         {celebrations.map((item) => (
@@ -2609,6 +2657,15 @@ export default function App() {
                     Best {localHighScore.toLocaleString()}
                   </div>
                 </div>
+                <AudioControls />
+                <a
+                  href="https://soundcloud.com/jacob-lee-clark"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-right text-[10px] font-black uppercase tracking-widest text-gray-500 transition-colors hover:text-cyan-200"
+                >
+                  For more music go here
+                </a>
                 <div className="rounded border border-gray-700 bg-gray-950/70 p-1">
                   <div className="mb-1 px-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
                     Graphics {graphicsMode === 'auto' ? `Auto (${qualityLabel(graphicsQuality)})` : qualityLabel(graphicsQuality)}
@@ -2747,6 +2804,17 @@ export default function App() {
                 </div>
               </div>
             </div>
+            <div className="sm:hidden">
+              <AudioControls compact />
+              <a
+                href="https://soundcloud.com/jacob-lee-clark"
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 block text-center text-[10px] font-black uppercase tracking-widest text-gray-500 transition-colors hover:text-cyan-200"
+              >
+                For more music go here
+              </a>
+            </div>
             <div className="grid grid-cols-4 gap-1 rounded-lg border border-gray-800 bg-gray-950/70 p-1 text-[10px] font-black uppercase tracking-widest sm:hidden">
               {GRAPHICS_OPTIONS.map((option) => (
                 <button
@@ -2784,6 +2852,9 @@ export default function App() {
                 Badges {Object.keys(achievements).length}/{ACHIEVEMENTS.length}
               </button>
             </div>
+          </div>
+          <div className="mb-6 w-full max-w-sm">
+            <AudioControls compact />
           </div>
 
           {!isLocalMode && (
