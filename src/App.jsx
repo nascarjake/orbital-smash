@@ -2657,33 +2657,37 @@ export default function App() {
                     Best {localHighScore.toLocaleString()}
                   </div>
                 </div>
-                <AudioControls />
-                <a
-                  href="https://soundcloud.com/jacob-lee-clark"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-right text-[10px] font-black uppercase tracking-widest text-gray-500 transition-colors hover:text-cyan-200"
-                >
-                  For more music go here
-                </a>
-                <div className="rounded border border-gray-700 bg-gray-950/70 p-1">
-                  <div className="mb-1 px-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
-                    Graphics {graphicsMode === 'auto' ? `Auto (${qualityLabel(graphicsQuality)})` : qualityLabel(graphicsQuality)}
+                <div className="grid w-full max-w-[650px] grid-cols-[1.1fr_0.9fr] items-start gap-2">
+                  <div className="rounded border border-gray-700 bg-gray-950/70 p-1">
+                    <div className="mb-1 px-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
+                      Graphics {graphicsMode === 'auto' ? `Auto (${qualityLabel(graphicsQuality)})` : qualityLabel(graphicsQuality)}
+                    </div>
+                    <div className="grid grid-cols-4 gap-1">
+                      {GRAPHICS_OPTIONS.map((option) => (
+                        <button
+                          key={option.id}
+                          onClick={() => setGraphics(option.id)}
+                          className={`rounded px-2 py-1 text-[10px] font-black uppercase tracking-widest transition-colors ${
+                            graphicsMode === option.id
+                              ? 'bg-cyan-500 text-gray-950'
+                              : 'bg-gray-900 text-gray-400 hover:bg-cyan-950 hover:text-cyan-100'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-4 gap-1">
-                    {GRAPHICS_OPTIONS.map((option) => (
-                      <button
-                        key={option.id}
-                        onClick={() => setGraphics(option.id)}
-                        className={`rounded px-2 py-1 text-[10px] font-black uppercase tracking-widest transition-colors ${
-                          graphicsMode === option.id
-                            ? 'bg-cyan-500 text-gray-950'
-                            : 'bg-gray-900 text-gray-400 hover:bg-cyan-950 hover:text-cyan-100'
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <AudioControls compact />
+                    <a
+                      href="https://soundcloud.com/jacob-lee-clark"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-right text-[10px] font-black uppercase tracking-widest text-gray-500 transition-colors hover:text-cyan-200"
+                    >
+                      For more music go here
+                    </a>
                   </div>
                 </div>
               </div>
