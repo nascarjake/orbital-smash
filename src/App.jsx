@@ -22,58 +22,30 @@ const VOLUME_KEY = 'orbital_smash_volume';
 const GRAPHICS_KEY = 'orbital_smash_graphics';
 const PLAYER_NAME_KEY = 'orbital_smash_name';
 
-const DREAMLO_PUBLIC = "69f664cb8f40bb1068bd441a";
-const DREAMLO_PRIVATE = "qJcEBUUmAE6ApG2ZQjVRiw4nBSAtJFnUGNixUKRstFdA";
+const LEADERBOARD_API_URL = (import.meta.env.VITE_LEADERBOARD_API_URL || '/api/leaderboard').replace(/\/$/, '');
 
 const isLocalRuntime = () => {
   const { hostname, protocol } = window.location;
   return protocol === 'file:' || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
 };
 
-const buildDreamloUrl = (path) => `http://dreamlo.com/lb/${path}`;
-const buildProxyUrls = (url) => [
-  `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  `https://everyorigin.jwvbremen.nl/get?url=${encodeURIComponent(url)}`,
-  `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-];
-
-const parseDreamloResponse = async (response, proxyUrl, expectJson = true) => {
+const requestLeaderboardApi = async (path = '', options = {}) => {
+  const url = `${LEADERBOARD_API_URL}${path}`;
+  const response = await fetch(url, {
+    cache: 'no-store',
+    ...options,
+    headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...options.headers,
+    },
+  });
   const body = await response.text();
 
   if (!response.ok) {
-    throw new Error(`Proxy request failed (${response.status}) via ${proxyUrl}`);
+    throw new Error(`Leaderboard API failed (${response.status}): ${body}`);
   }
 
-  if (!expectJson) {
-    return body;
-  }
-
-  try {
-    return JSON.parse(body);
-  } catch {
-    const wrapped = JSON.parse(body);
-    if (typeof wrapped?.contents === 'string') {
-      return JSON.parse(wrapped.contents);
-    }
-    throw new Error(`Unexpected proxy payload from ${proxyUrl}`);
-  }
-};
-
-const requestDreamlo = async (path, { expectJson = true } = {}) => {
-  const targetUrl = `${buildDreamloUrl(path)}${path.includes('?') ? '&' : '?'}_=${Date.now()}`;
-  let lastError = null;
-
-  for (const proxyUrl of buildProxyUrls(targetUrl)) {
-    try {
-      const response = await fetch(proxyUrl, { cache: 'no-store' });
-      return await parseDreamloResponse(response, proxyUrl, expectJson);
-    } catch (error) {
-      lastError = error;
-      console.warn(`Dreamlo proxy failed: ${proxyUrl}`, error);
-    }
-  }
-
-  throw lastError ?? new Error('Unable to reach Dreamlo through any proxy');
+  return body ? JSON.parse(body) : null;
 };
 
 const normalizeLeaderboardEntries = (data) => {
@@ -699,7 +671,7 @@ export default function App() {
     }
 
     try {
-      const data = await requestDreamlo(`${DREAMLO_PUBLIC}/json`);
+      const data = await requestLeaderboardApi();
       setLeaderboard(normalizeLeaderboardEntries(data));
     } catch (e) { console.error("Leaderboard fetch failed", e); }
   };
@@ -718,10 +690,10 @@ export default function App() {
     }
 
     try {
-      await requestDreamlo(
-        `${DREAMLO_PRIVATE}/add/${encodeURIComponent(submittedName)}/${finalScore}`,
-        { expectJson: false }
-      );
+      await requestLeaderboardApi('/score', {
+        method: 'POST',
+        body: JSON.stringify({ name: submittedName, score: finalScore }),
+      });
       setLeaderboardSubmitStatus('submitted');
       if (returnToMenu) setGameState('menu');
       await new Promise(r => setTimeout(r, 600));

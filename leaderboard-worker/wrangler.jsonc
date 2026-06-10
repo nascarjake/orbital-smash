@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orbital-smash-leaderboard",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-10",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  },
+  "vars": {
+    "DREAMLO_PUBLIC_KEY": "69f664cb8f40bb1068bd441a"
+  }
+}

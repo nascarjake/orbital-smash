@@ -39,6 +39,8 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Build
+        env:
+          VITE_LEADERBOARD_API_URL: ${{ vars.VITE_LEADERBOARD_API_URL }}
         run: npm run build
       - name: Setup Pages
         uses: actions/configure-pages@v4
