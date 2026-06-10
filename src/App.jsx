@@ -22,7 +22,8 @@ const VOLUME_KEY = 'orbital_smash_volume';
 const GRAPHICS_KEY = 'orbital_smash_graphics';
 const PLAYER_NAME_KEY = 'orbital_smash_name';
 
-const LEADERBOARD_API_URL = (import.meta.env.VITE_LEADERBOARD_API_URL || '/api/leaderboard').replace(/\/$/, '');
+const DEFAULT_LEADERBOARD_API_URL = 'https://orbital-smash-leaderboard.nascarjake.workers.dev';
+const LEADERBOARD_API_URL = (import.meta.env.VITE_LEADERBOARD_API_URL || DEFAULT_LEADERBOARD_API_URL).replace(/\/$/, '');
 
 const isLocalRuntime = () => {
   const { hostname, protocol } = window.location;
